@@ -245,7 +245,7 @@ class Scraper:
         user = info.get("user") or {}
         if not user.get("uniqueId"):
             code = detail.get("statusCode")
-            if code in (10221, 10202, 404):
+            if code in (10221, 10202):
                 raise RuntimeError("Kênh không tồn tại hoặc bị khóa")
             raise RuntimeError(f"Không lấy được kênh (mã {code})")
         stats = info.get("stats") or info.get("statsV2") or {}
@@ -276,40 +276,123 @@ class Scraper:
         days = int(job.get("days") or 0)
         if days and not since:
             since = int(time.time()) - days * 86400
-        mode = job.get("mode") or "quick"
-        max_scrolls = 30 if mode == "scan" else 2
+        video_count = int(channel_info["video_count"] or 0)
+        responses = captured
+        items: dict[str, dict] = {}
         seen: set[str] = set()
-        videos: list[dict] = []
-        idle = 0
-        for _ in range(max_scrolls):
-            before = len(captured)
-            page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(1500)
-            if len(captured) == before:
-                idle += 1
-                if idle >= 3:
-                    break
-            else:
-                idle = 0
-            for payload in captured:
-                for item in payload.get("itemList") or []:
-                    video = _video_from_item(item, key)
+        done_responses = 0
+        has_more = True
+        tail_time = None
+
+        def collect() -> None:
+            nonlocal done_responses, has_more, tail_time
+            while done_responses < len(responses):
+                payload = responses[done_responses]
+                done_responses += 1
+                if not payload:
+                    continue
+                has_more = bool(payload.get("hasMore", has_more))
+                for raw_item in payload.get("itemList") or []:
+                    video = _video_row(raw_item, key)
                     if not video or video["id"] in seen:
                         continue
-                    created = video.get("create_time") or 0
-                    if since and created < since:
-                        continue
-                    if until and created > until:
-                        continue
                     seen.add(video["id"])
-                    videos.append(video)
-                    if limit and len(videos) >= limit:
-                        break
-            if limit and len(videos) >= limit:
+                    items[video["id"]] = video
+                    created = video["create_time"]
+                    if created and (tail_time is None or created < tail_time):
+                        tail_time = created
+
+        def enough() -> bool:
+            if limit and len(items) >= limit:
+                return True
+            if since and tail_time is not None and tail_time < since:
+                return True
+            return False
+
+        for _ in range(30):
+            page.wait_for_timeout(500)
+            collect()
+            if items:
                 break
-        full = mode == "scan" and not limit and not since and not until
-        db.finish_scan(key, videos, full=full)
-        return len(videos)
+            if not (responses and done_responses < len(responses) and has_more):
+                break
+
+        if not items and video_count and _has_captcha(page):
+            db.set_status(
+                key,
+                "error",
+                "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha",
+            )
+            page.close()
+            return 0
+
+        if job.get("mode") == "scan":
+            idle = 0
+            for _ in range(30):
+                if not has_more or idle >= 10 or enough():
+                    break
+                before = len(responses)
+                page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                page.mouse.wheel(0, 3000)
+                page.wait_for_timeout(1200)
+                collect()
+                idle = idle + 1 if len(responses) == before else 0
+
+        videos = list(items.values())
+        if until:
+            videos = [video for video in videos if video["create_time"] <= until]
+        videos.sort(key=lambda video: video["create_time"], reverse=True)
+        if limit:
+            videos = videos[:limit]
+        is_full = job["mode"] == "scan" and not limit and not since and not until
+        result = db.finish_scan(key, videos, full=is_full)
+        note = ""
+        if not has_more and video_count and len(videos) < video_count:
+            note = f"{len(videos)}/{video_count} video – TikTok ngừng trả thêm, thử quét lại sau"
+        if note:
+            db.set_status(key, "done", note)
+        if job.get("ids"):
+            self._update_videos(key, job["ids"])
+        return int(result.get("new") or 0) + int(result.get("updated") or 0)
+
+    def _update_videos(self, key: str, ids) -> None:
+        wanted = {str(video_id) for video_id in ids}
+        if not wanted:
+            return
+        channel = db.get_channel(key) or {}
+        username = channel.get("unique_id") or key
+        ctx = self._browser()
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        captured: list[dict] = []
+
+        def on_response(response):
+            if "/api/post/item_list" not in response.url:
+                return
+            try:
+                captured.append(response.json())
+            except Exception:
+                return
+
+        page.on("response", on_response)
+        page.goto(
+            "https://www.tiktok.com/@" + username,
+            wait_until="domcontentloaded",
+            timeout=60000,
+        )
+        found: dict[str, dict] = {}
+        for _ in range(20):
+            page.wait_for_timeout(500)
+            for payload in captured:
+                for raw_item in payload.get("itemList") or []:
+                    video = _video_row(raw_item, key)
+                    if video and video["id"] in wanted:
+                        found[video["id"]] = video
+            if wanted <= set(found):
+                break
+            page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+            page.mouse.wheel(0, 3000)
+        if found:
+            db.finish_scan(key, list(found.values()), full=False)
 
 
 def _num(value) -> int:
@@ -317,6 +400,18 @@ def _num(value) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _video_row(item: dict, username: str) -> dict | None:
+    return _video_from_item(item, username)
+
+
+def _has_captcha(page) -> bool:
+    try:
+        body = page.content()
+    except Exception:
+        return False
+    return "captcha" in body.lower()
 
 
 def _video_from_item(item: dict, username: str) -> dict | None:
