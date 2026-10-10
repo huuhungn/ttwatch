@@ -230,8 +230,9 @@ class Scraper:
         )
         raw = None
         for _ in range(20):
-            raw = page.evaluate(
-                "() => document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')?.textContent"
+            raw = _evaluate_after_navigation(
+                page,
+                "() => document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')?.textContent",
             )
             if raw:
                 break
@@ -337,7 +338,9 @@ class Scraper:
                 if not has_more or idle >= 10 or enough():
                     break
                 before = len(responses)
-                page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                _evaluate_after_navigation(
+                    page, "() => window.scrollTo(0, document.body.scrollHeight)"
+                )
                 page.mouse.wheel(0, 3000)
                 page.wait_for_timeout(1200)
                 collect()
@@ -405,6 +408,21 @@ class Scraper:
         if missing:
             note += f" – {missing} video không lấy được (đã xóa, bị ẩn hoặc bị chặn)"
         db.set_status(key, "done", note)
+
+
+def _evaluate_after_navigation(page, script: str):
+    """Chạy JS; nếu TikTok chuyển trang giữa chừng thì chờ trang mới và trả None."""
+    try:
+        return page.evaluate(script)
+    except Exception as exc:
+        text = str(exc)
+        if "Execution context was destroyed" not in text and "navigat" not in text.lower():
+            raise
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+    except Exception:
+        pass
+    return None
 
 
 def _num(value) -> int:

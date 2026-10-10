@@ -198,6 +198,67 @@ class ScrollLoopTest(unittest.TestCase):
         self.assertEqual([video["id"] for video in stored], ["2", "1"])
 
 
+class _NavigatingPage(_Page):
+    def __init__(self, payloads):
+        super().__init__(payloads)
+        self.navigations = 0
+        self.load_waits = 0
+
+    def evaluate(self, script):
+        if "UNIVERSAL_DATA" in script and not self.navigations:
+            self.navigations += 1
+            raise RuntimeError(
+                "Page.evaluate: Execution context was destroyed, most likely because of a navigation"
+            )
+        return super().evaluate(script)
+
+    def wait_for_load_state(self, state, timeout=None):
+        self.load_waits += 1
+
+
+class NavigationTest(unittest.TestCase):
+    def test_scan_survives_navigation_during_evaluate(self):
+        import db as dbmod
+        from scraper import Scraper
+
+        data = DATA / "navigation"
+        if data.exists():
+            shutil.rmtree(data)
+        data.mkdir(parents=True)
+        dbmod.DB_PATH = data / "data.db"
+        dbmod.init()
+        dbmod.add_channels(["demo"])
+        page = _NavigatingPage(
+            [
+                _Response(
+                    "https://www.tiktok.com/api/post/item_list?cursor=0",
+                    {
+                        "hasMore": False,
+                        "itemList": [
+                            {"id": "1", "desc": "one", "createTime": 100, "stats": {"playCount": 9}, "video": {}},
+                        ],
+                    },
+                )
+            ]
+        )
+        scraper = Scraper.__new__(Scraper)
+        scraper._browser = lambda: _Context(page)
+        count = scraper._scrape("demo", {"mode": "scan"})
+        self.assertEqual(count, 1)
+        self.assertEqual(page.navigations, 1)
+        self.assertEqual(page.load_waits, 1)
+
+    def test_other_evaluate_errors_still_raise(self):
+        from scraper import _evaluate_after_navigation
+
+        class Broken:
+            def evaluate(self, script):
+                raise RuntimeError("Target page, context or browser has been closed")
+
+        with self.assertRaises(RuntimeError):
+            _evaluate_after_navigation(Broken(), "() => 1")
+
+
 class _Locator:
     def __init__(self, selector, html):
         self.selector = selector
