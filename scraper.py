@@ -117,13 +117,18 @@ class Scraper:
                     if key in self._jobs:
                         self._jobs[key]["status"] = "running"
                 db.set_status(key, "running", "")
-                count = self._scrape(key, job)
+                if job.get("mode") == "videos":
+                    self._update_videos(key, job.get("ids") or [])
+                    count = len(job.get("ids") or [])
+                else:
+                    count = self._scrape(key, job)
                 with self._lock:
                     if key in self._jobs:
                         self._jobs[key]["status"] = "done"
                         self._jobs[key]["videos"] = count
                         self._jobs[key]["total"] = count
-                db.set_status(key, "done", "")
+                if job.get("mode") != "videos":
+                    db.set_status(key, "done", "")
             except Exception as exc:
                 message = "Lỗi: " + str(exc)
                 with self._lock:
@@ -351,48 +356,55 @@ class Scraper:
             note = f"{len(videos)}/{video_count} video – TikTok ngừng trả thêm, thử quét lại sau"
         if note:
             db.set_status(key, "done", note)
-        if job.get("ids"):
-            self._update_videos(key, job["ids"])
         return int(result.get("new") or 0) + int(result.get("updated") or 0)
 
     def _update_videos(self, key: str, ids) -> None:
-        wanted = {str(video_id) for video_id in ids}
-        if not wanted:
-            return
         channel = db.get_channel(key) or {}
         username = channel.get("unique_id") or key
-        ctx = self._browser()
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        captured: list[dict] = []
-
-        def on_response(response):
-            if "/api/post/item_list" not in response.url:
-                return
+        page = self._browser().new_page()
+        rows = []
+        missing = 0
+        try:
+            for n, video_id in enumerate(ids, 1):
+                item = None
+                try:
+                    page.goto(
+                        f"https://www.tiktok.com/@{username}/video/{video_id}",
+                        wait_until="domcontentloaded",
+                        timeout=60000,
+                    )
+                except Exception:
+                    pass
+                for _ in range(24):
+                    try:
+                        raw = page.evaluate(
+                            "() => document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')?.textContent"
+                        )
+                    except Exception:
+                        raw = None
+                    if raw:
+                        item, status = _video_detail(raw)
+                        if item or status:
+                            break
+                    page.wait_for_timeout(500)
+                if item:
+                    rows.append(_video_row(item, key))
+                else:
+                    missing += 1
+                with self._lock:
+                    job = self._jobs.get(key)
+                    if job:
+                        job["videos"] = n
+        finally:
             try:
-                captured.append(response.json())
+                page.close()
             except Exception:
-                return
-
-        page.on("response", on_response)
-        page.goto(
-            "https://www.tiktok.com/@" + username,
-            wait_until="domcontentloaded",
-            timeout=60000,
-        )
-        found: dict[str, dict] = {}
-        for _ in range(20):
-            page.wait_for_timeout(500)
-            for payload in captured:
-                for raw_item in payload.get("itemList") or []:
-                    video = _video_row(raw_item, key)
-                    if video and video["id"] in wanted:
-                        found[video["id"]] = video
-            if wanted <= set(found):
-                break
-            page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-            page.mouse.wheel(0, 3000)
-        if found:
-            db.finish_scan(key, list(found.values()), full=False)
+                pass
+        db.finish_scan(key, rows, full=False)
+        note = f"Cập nhật view {len(rows)} video"
+        if missing:
+            note += f" – {missing} video không lấy được (đã xóa, bị ẩn hoặc bị chặn)"
+        db.set_status(key, "done", note)
 
 
 def _num(value) -> int:
@@ -402,17 +414,24 @@ def _num(value) -> int:
         return 0
 
 
+def _video_detail(raw: str):
+    try:
+        detail = json.loads(raw).get("__DEFAULT_SCOPE__", {}).get("webapp.video-detail", {})
+    except ValueError:
+        return None, None
+    item = (detail.get("itemInfo") or {}).get("itemStruct")
+    return (item if item and item.get("id") else None), detail.get("statusCode")
+
+
 def _video_row(item: dict, username: str) -> dict | None:
     return _video_from_item(item, username)
 
 
 def _has_captcha(page) -> bool:
     try:
-        return bool(
-            page.locator(
-                "[class*='captcha-verify'], [id*='captcha-verify'], iframe[src*='captcha']"
-            ).count()
-        )
+        return page.locator(
+            "#captcha-container, .captcha_verify_container, [class*='captcha']"
+        ).count() > 0
     except Exception:
         return False
 

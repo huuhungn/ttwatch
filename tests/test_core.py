@@ -1,5 +1,6 @@
 import os
 import shutil
+import threading
 import unittest
 from pathlib import Path
 
@@ -195,6 +196,110 @@ class ScrollLoopTest(unittest.TestCase):
         self.assertEqual(page.mouse.wheels, [])
         stored = dbmod.list_videos("demo")
         self.assertEqual([video["id"] for video in stored], ["2", "1"])
+
+
+class _Locator:
+    def __init__(self, selector, html):
+        self.selector = selector
+        self.html = html
+
+    def count(self):
+        if "#captcha-container" in self.selector and 'id="captcha-container"' in self.html:
+            return 1
+        if "captcha_verify_container" in self.selector and "captcha_verify_container" in self.html:
+            return 1
+        if "[class*='captcha']" in self.selector and 'class="secsdk-captcha"' in self.html:
+            return 1
+        return 0
+
+
+class _DetailPage:
+    def __init__(self):
+        self.urls = []
+        self.html = "<html>captcha word only</html>"
+
+    def goto(self, url, **kwargs):
+        self.urls.append(url)
+
+    def evaluate(self, script):
+        if "UNIVERSAL_DATA" not in script:
+            return None
+        video_id = self.urls[-1].rsplit("/", 1)[-1]
+        if video_id == "missing":
+            return None
+        return (
+            '{"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":'
+            '{"id":"%s","desc":"kept","createTime":300,"stats":{"playCount":7},"video":{}}}}}}'
+            % video_id
+        )
+
+    def wait_for_timeout(self, ms):
+        return None
+
+    def close(self):
+        self.closed = True
+
+    def locator(self, selector):
+        return _Locator(selector, self.html)
+
+
+class UpdateVideosTest(unittest.TestCase):
+    def test_updates_found_video_and_counts_missing(self):
+        import db as dbmod
+        from scraper import Scraper
+
+        data = DATA / "update"
+        if data.exists():
+            shutil.rmtree(data)
+        data.mkdir(parents=True)
+        dbmod.DB_PATH = data / "data.db"
+        dbmod.init()
+        dbmod.add_channels(["demo"])
+        page = _DetailPage()
+        scraper = Scraper.__new__(Scraper)
+        scraper._lock = threading.Lock()
+        scraper._jobs = {"demo": {"videos": 0}}
+        scraper._browser = lambda: type("Ctx", (), {"new_page": lambda self: page})()
+        scraper._update_videos("demo", ["kept", "missing"])
+        self.assertTrue(page.closed)
+        self.assertEqual(scraper._jobs["demo"]["videos"], 2)
+        stored = dbmod.list_videos("demo")
+        self.assertEqual([video["id"] for video in stored], ["kept"])
+        self.assertTrue(page.urls[0].endswith("/@demo/video/kept"))
+        self.assertTrue(page.urls[1].endswith("/@demo/video/missing"))
+        note = dbmod.get_channel("demo")["message"]
+        self.assertIn("Cập nhật view 1 video", note)
+        self.assertIn("1 video không lấy được", note)
+
+
+class VideosJobTest(unittest.TestCase):
+    def test_videos_mode_skips_channel_scrape(self):
+        import queue
+        from scraper import Scraper
+
+        scraper = Scraper.__new__(Scraper)
+        scraper._lock = threading.Lock()
+        scraper._jobs = {"demo": {"status": "queued"}}
+        scraper._queue = queue.Queue()
+        calls = []
+        scraper._update_videos = lambda key, ids: calls.append(("videos", key, ids))
+        scraper._scrape = lambda key, job: calls.append(("scrape", key))
+        scraper._queue.put(("demo", {"mode": "videos", "ids": ["1", "2"]}))
+        worker = threading.Thread(target=scraper._run, daemon=True)
+        worker.start()
+        scraper._queue.join()
+        self.assertEqual(calls, [("videos", "demo", ["1", "2"])])
+        self.assertEqual(scraper._jobs["demo"]["status"], "done")
+
+
+class CaptchaTest(unittest.TestCase):
+    def test_word_in_html_is_not_a_widget(self):
+        from scraper import _has_captcha
+
+        page = _DetailPage()
+        self.assertFalse(_has_captcha(page))
+        page.html = '<div id="captcha-container"></div>'
+        self.assertTrue(_has_captcha(page))
 
 
 if __name__ == "__main__":
