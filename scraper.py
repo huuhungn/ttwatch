@@ -408,10 +408,13 @@ def _video_row(item: dict, username: str) -> dict | None:
 
 def _has_captcha(page) -> bool:
     try:
-        body = page.content()
+        return bool(
+            page.locator(
+                "[class*='captcha-verify'], [id*='captcha-verify'], iframe[src*='captcha']"
+            ).count()
+        )
     except Exception:
         return False
-    return "captcha" in body.lower()
 
 
 def _video_from_item(item: dict, username: str) -> dict | None:
