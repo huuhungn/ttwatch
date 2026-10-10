@@ -21,6 +21,9 @@ import db
 from paths import APP_NAME, DATA_DIR, STATIC_DIR
 from scraper import Scraper, parse_input
 
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+db.init()
+
 HOST = "127.0.0.1"
 app = FastAPI(title=APP_NAME)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
