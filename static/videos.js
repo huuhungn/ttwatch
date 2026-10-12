@@ -80,6 +80,7 @@ function renderHead(c, total) {
        <span>Lượt thích <b>${fmtNum(c.likes)}</b></span>
        <span>Tổng view <b>${fmtNum(total)}</b></span>
        <span>Video <b>${fmtNum(c.video_count)}</b></span>
+       <span>Quét gần nhất: <b>${c.last_scan_at ? `${fmtDate(c.last_scan_at, true)} (${esc(c.last_scan_label || "")})` : "chưa"}</b></span>
        <span>Quét toàn bộ lần cuối: <b>${c.full_scan_at ? fmtDate(c.full_scan_at, true) : "chưa"}</b></span>
        ${c.message ? `<span style="color:var(--down)">${esc(c.message)}</span>` : ""}
      </div></div>`;

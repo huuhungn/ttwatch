@@ -363,5 +363,190 @@ class CaptchaTest(unittest.TestCase):
         self.assertTrue(_has_captcha(page))
 
 
+def _queue_scraper(name):
+    """Scraper chạy hàng đợi thật nhưng trình duyệt giả, không chờ khi thử lại."""
+    import queue
+
+    import db as dbmod
+    from scraper import Scraper
+
+    data = DATA / name
+    if data.exists():
+        shutil.rmtree(data)
+    data.mkdir(parents=True)
+    dbmod.DB_PATH = data / "data.db"
+    dbmod.init()
+    scraper = Scraper.__new__(Scraper)
+    scraper._lock = threading.Lock()
+    scraper._jobs = {}
+    scraper._queue = queue.Queue()
+    scraper._context = None
+    scraper._playwright = None
+    scraper.RETRY_DELAYS = (0, 0)
+    return scraper, dbmod
+
+
+def _one_video_page():
+    return _Page(
+        [
+            _Response(
+                "https://www.tiktok.com/api/post/item_list?cursor=0",
+                {"hasMore": False, "itemList": [{"id": "9", "createTime": 1, "stats": {"playCount": 1}, "video": {}}]},
+            )
+        ]
+    )
+
+
+class _CaptchaPage(_Page):
+    def locator(self, selector):
+        return _Locator(selector, '<div id="captcha-container"></div>')
+
+
+class CaptchaQueueTest(unittest.TestCase):
+    def test_captcha_marks_channel_and_queue_moves_on(self):
+        scraper, dbmod = _queue_scraper("captcha-queue")
+        dbmod.add_channels(["blocked", "ok"])
+        pages = {"blocked": _CaptchaPage([]), "ok": _one_video_page()}
+        order = []
+        real_scrape = scraper._scrape
+
+        def scrape(key, job):
+            order.append(key)
+            return real_scrape(key, job)
+
+        scraper._scrape = scrape
+        scraper._browser = lambda: _Context(pages[order[-1]])
+        scraper.enqueue(["blocked", "ok"], {"mode": "quick"})
+        threading.Thread(target=scraper._run, daemon=True).start()
+        scraper._queue.join()
+
+        # Hành vi hiện tại: captcha không dừng hàng đợi, kênh sau vẫn được quét
+        # và kênh bị captcha không bị quét lại tự động.
+        self.assertEqual(order, ["blocked", "ok"])
+        blocked = dbmod.get_channel("blocked")
+        self.assertEqual(blocked["status"], "error")
+        self.assertIn("captcha", blocked["message"])
+        self.assertIsNone(blocked["last_scan_at"])
+        self.assertEqual(dbmod.get_channel("ok")["status"], "done")
+
+
+class RetryTest(unittest.TestCase):
+    def _run_one(self, name, failures):
+        scraper, dbmod = _queue_scraper(name)
+        dbmod.add_channels(["demo"])
+        calls = []
+
+        def scrape(key, job):
+            calls.append(key)
+            if len(calls) <= len(failures):
+                raise failures[len(calls) - 1]
+            return 3
+
+        scraper._scrape = scrape
+        scraper.enqueue(["demo"], {"mode": "scan", "limit": 3})
+        threading.Thread(target=scraper._run, daemon=True).start()
+        scraper._queue.join()
+        return calls, dbmod.get_channel("demo"), scraper
+
+    def test_transient_error_is_retried_then_succeeds(self):
+        calls, channel, scraper = self._run_one(
+            "retry-ok", [RuntimeError("Timeout 30000ms exceeded")]
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(channel["status"], "done")
+        self.assertEqual(channel["last_scan_label"], "Quét 3 video gần nhất")
+        self.assertIsNotNone(channel["last_scan_at"])
+        self.assertEqual(scraper._jobs["demo"]["status"], "done")
+
+    def test_transient_error_gives_up_after_three_attempts(self):
+        errors = [RuntimeError("net::ERR_CONNECTION_RESET")] * 3
+        calls, channel, _ = self._run_one("retry-fail", errors)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(channel["status"], "error")
+        self.assertIn("đã thử 3 lần", channel["message"])
+
+    def test_permanent_and_captcha_errors_are_not_retried(self):
+        from scraper import CAPTCHA_MESSAGE, CaptchaError
+
+        for name, error in (
+            ("no-retry-missing", RuntimeError("Kênh không tồn tại")),
+            ("no-retry-captcha", CaptchaError(CAPTCHA_MESSAGE)),
+        ):
+            calls, channel, _ = self._run_one(name, [error])
+            self.assertEqual(len(calls), 1, name)
+            self.assertEqual(channel["status"], "error", name)
+            self.assertNotIn("đã thử", channel["message"], name)
+
+
+class DescribeJobTest(unittest.TestCase):
+    def test_labels(self):
+        from scraper import describe_job
+
+        self.assertEqual(describe_job({"mode": "quick"}), "Cập nhật nhanh")
+        self.assertEqual(describe_job({"mode": "scan"}), "Quét toàn bộ video")
+        self.assertEqual(describe_job({"mode": "scan", "days": 7}), "Quét 7 ngày qua")
+        self.assertEqual(describe_job({"mode": "videos", "ids": ["1", "2"]}), "Cập nhật view 2 video")
+
+
+class InstanceLockTest(unittest.TestCase):
+    def test_second_app_on_same_data_dir_is_refused(self):
+        import subprocess
+        import sys
+
+        import instance_lock
+
+        data = DATA / "lock"
+        if data.exists():
+            shutil.rmtree(data)
+        held = instance_lock.acquire(data)
+        try:
+            probe = (
+                "import sys, instance_lock\n"
+                "try:\n"
+                "    instance_lock.acquire(sys.argv[1])\n"
+                "except instance_lock.AlreadyRunning as exc:\n"
+                "    print('busy', exc)\n"
+                "else:\n"
+                "    print('acquired')\n"
+            )
+            out = subprocess.run(
+                [sys.executable, "-c", probe, str(data)],
+                cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            ).stdout
+            self.assertTrue(out.startswith("busy"), out)
+            self.assertIn(f"PID {os.getpid()}", out)
+        finally:
+            held.release()
+        again = instance_lock.acquire(data)
+        again.release()
+        self.assertFalse((data / instance_lock.PID_NAME).exists())
+
+    def test_old_database_gets_new_columns(self):
+        import sqlite3
+
+        import db as dbmod
+
+        data = DATA / "migrate"
+        if data.exists():
+            shutil.rmtree(data)
+        data.mkdir(parents=True)
+        path = data / "data.db"
+        old = sqlite3.connect(path)
+        legacy_schema = dbmod.SCHEMA.replace(
+            ",\n    last_scan_at INTEGER,\n    last_scan_label TEXT DEFAULT ''", ""
+        )
+        self.assertNotIn("last_scan_at", legacy_schema)
+        old.executescript(legacy_schema)
+        old.execute("INSERT INTO channels(username) VALUES('legacy')")
+        old.commit()
+        old.close()
+        dbmod.DB_PATH = path
+        dbmod.init()
+        dbmod.init()
+        columns = {row[1] for row in sqlite3.connect(path).execute("PRAGMA table_info(channels)")}
+        self.assertTrue({"last_scan_at", "last_scan_label"} <= columns)
+        self.assertEqual(dbmod.get_channel("legacy")["username"], "legacy")
+
+
 if __name__ == "__main__":
     unittest.main()

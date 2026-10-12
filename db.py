@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS channels (
     message TEXT DEFAULT '',
     added_at INTEGER,
     updated_at INTEGER,
-    full_scan_at INTEGER
+    full_scan_at INTEGER,
+    last_scan_at INTEGER,
+    last_scan_label TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,6 +83,7 @@ def init() -> None:
         c = _conn()
         try:
             c.executescript(SCHEMA)
+            _add_missing_columns(c)
             c.execute("PRAGMA journal_mode=WAL")
             for key, value in DEFAULT_SETTINGS.items():
                 c.execute(
@@ -91,6 +94,37 @@ def init() -> None:
                 "UPDATE channels SET status='error', "
                 "message='Bị dừng giữa chừng – hãy cập nhật lại' "
                 "WHERE status IN ('queued','running')"
+            )
+            c.commit()
+        finally:
+            c.close()
+
+
+# Cột thêm sau bản gốc: DB cũ được bổ sung khi mở app, không đổi dữ liệu sẵn có.
+ADDED_COLUMNS = {
+    "channels": {
+        "last_scan_at": "INTEGER",
+        "last_scan_label": "TEXT DEFAULT ''",
+    },
+}
+
+
+def _add_missing_columns(c) -> None:
+    for table, columns in ADDED_COLUMNS.items():
+        have = {row["name"] for row in c.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns.items():
+            if name not in have:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def record_scan(username: str, label: str) -> None:
+    """Ghi lần quét thành công gần nhất và kiểu quét, để trang videos hiển thị."""
+    with _lock:
+        c = _conn()
+        try:
+            c.execute(
+                "UPDATE channels SET last_scan_at=?, last_scan_label=? WHERE username=?",
+                (int(time.time()), label, username),
             )
             c.commit()
         finally:

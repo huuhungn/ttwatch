@@ -18,10 +18,27 @@ from openpyxl.styles import Font
 from pydantic import BaseModel
 
 import db
-from paths import APP_NAME, DATA_DIR, STATIC_DIR
+import instance_lock
+from paths import APP_NAME, DATA_DIR, FROZEN, STATIC_DIR
 from scraper import Scraper, parse_input
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+def _refuse_second_instance(message: str) -> None:
+    print(message, file=sys.stderr)
+    if FROZEN and sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, APP_NAME, 0x30)
+    raise SystemExit(1)
+
+
+# Khóa trước khi mở DB và trình duyệt: hai app cùng thư mục dữ liệu sẽ tranh nhau
+# profile trình duyệt và ghi đè trạng thái kênh của nhau.
+try:
+    _instance = instance_lock.acquire(DATA_DIR)
+except instance_lock.AlreadyRunning as exc:
+    _refuse_second_instance(str(exc))
+
 db.init()
 
 HOST = "127.0.0.1"
@@ -230,8 +247,6 @@ def _exit_soon() -> None:
 
 
 def main() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db.init()
     port = _free_port()
     url = f"http://{HOST}:{port}/"
     config = uvicorn.Config(app, host=HOST, port=port, log_level="warning")

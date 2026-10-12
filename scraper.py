@@ -10,6 +10,7 @@ import queue
 import re
 import threading
 import time
+import traceback
 import urllib.request
 
 import db
@@ -17,6 +18,65 @@ from paths import PROFILE_DIR
 
 USERNAME_RE = re.compile(r"tiktok\.com/@([A-Za-z0-9._]{2,24})")
 SHORT_RE = re.compile(r"(?:vt|vm)\.tiktok\.com/\w+|tiktok\.com/t/\w+")
+CAPTCHA_MESSAGE = "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha"
+TRANSIENT_MARKERS = (
+    "timeout",
+    "timed out",
+    "execution context was destroyed",
+    "net::err_",
+    "target page, context or browser has been closed",
+    "không đọc được trang kênh",
+)
+
+
+class CaptchaError(RuntimeError):
+    """TikTok hiện captcha: quét lại ngay chỉ làm bị chặn nặng hơn."""
+
+
+class ProfileBusyError(RuntimeError):
+    """Profile trình duyệt đang bị process khác giữ: thử lại ngay không có ích."""
+
+
+def _first_line(exc: BaseException) -> str:
+    lines = str(exc).strip().splitlines()
+    return lines[0] if lines else type(exc).__name__
+
+
+def _profile_in_use(exc: BaseException) -> bool:
+    text = str(exc)
+    return "existing browser session" in text or "already in use" in text
+
+
+def _is_transient(exc: BaseException) -> bool:
+    if isinstance(exc, (CaptchaError, ProfileBusyError)):
+        return False
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in TRANSIENT_MARKERS)
+
+
+def describe_job(job: dict) -> str:
+    """Mô tả kiểu quét, theo hàm describe_job của bản gốc."""
+    mode = job.get("mode", "quick")
+    if mode == "quick":
+        return "Cập nhật nhanh"
+    if mode == "videos":
+        return f"Cập nhật view {len(job.get('ids') or [])} video"
+
+    def fmt(ts):
+        return time.strftime("%d/%m/%Y", time.localtime(ts))
+
+    parts = []
+    if job.get("limit"):
+        parts.append(f"{job['limit']} video gần nhất")
+    if job.get("days"):
+        parts.append(f"{job['days']} ngày qua")
+    elif job.get("since") and job.get("until"):
+        parts.append(f"từ {fmt(job['since'])} đến {fmt(job['until'])}")
+    elif job.get("since"):
+        parts.append(f"từ {fmt(job['since'])}")
+    elif job.get("until"):
+        parts.append(f"đến {fmt(job['until'])}")
+    return "Quét " + (", ".join(parts) if parts else "toàn bộ video")
 
 
 def resolve_short_url(url: str) -> str | None:
@@ -109,36 +169,64 @@ class Scraper:
             ]
             return {"current": current, "queue": queue_items}
 
+    # Lỗi tạm thời (mạng chậm, TikTok chuyển trang, trình duyệt bị đóng) được quét lại
+    # sau các khoảng chờ này; lỗi cố định như kênh không tồn tại thì báo ngay.
+    RETRY_DELAYS: tuple[int, ...] = (5, 15)
+
     def _run(self) -> None:
         while True:
             key, job = self._queue.get()
             try:
-                with self._lock:
-                    if key in self._jobs:
-                        self._jobs[key]["status"] = "running"
-                db.set_status(key, "running", "")
+                self._process(key, job)
+            finally:
+                self._queue.task_done()
+                time.sleep(1.5)
+
+    def _process(self, key: str, job: dict) -> None:
+        with self._lock:
+            if key in self._jobs:
+                self._jobs[key]["status"] = "running"
+        attempts = len(self.RETRY_DELAYS) + 1
+        for attempt in range(1, attempts + 1):
+            db.set_status(key, "running", "" if attempt == 1 else f"Thử lại lần {attempt}/{attempts}")
+            try:
                 if job.get("mode") == "videos":
                     self._update_videos(key, job.get("ids") or [])
                     count = len(job.get("ids") or [])
                 else:
                     count = self._scrape(key, job)
-                with self._lock:
-                    if key in self._jobs:
-                        self._jobs[key]["status"] = "done"
-                        self._jobs[key]["videos"] = count
-                        self._jobs[key]["total"] = count
-                if job.get("mode") != "videos":
-                    db.set_status(key, "done", "")
             except Exception as exc:
+                traceback.print_exc()
+                self._close_browser()
+                if attempt < attempts and _is_transient(exc):
+                    db.set_status(
+                        key,
+                        "running",
+                        f"Lỗi tạm thời, sẽ thử lại lần {attempt + 1}/{attempts}: {_first_line(exc)}",
+                    )
+                    time.sleep(self.RETRY_DELAYS[attempt - 1])
+                    continue
                 message = "Lỗi: " + str(exc)
+                if attempt > 1:
+                    message += f" (đã thử {attempt} lần)"
                 with self._lock:
                     if key in self._jobs:
                         self._jobs[key]["status"] = "error"
                         self._jobs[key]["message"] = message
                 db.set_status(key, "error", message)
-            finally:
-                self._queue.task_done()
-                time.sleep(1.5)
+                return
+            with self._lock:
+                if key in self._jobs:
+                    self._jobs[key]["status"] = "done"
+                    self._jobs[key]["videos"] = count
+                    self._jobs[key]["total"] = count
+            channel = db.get_channel(key) or {}
+            if channel.get("status") == "running":
+                db.set_status(key, "done", "")
+                channel["status"] = "done"
+            if channel.get("status") == "done":
+                db.record_scan(key, describe_job(job))
+            return
 
     def _auto_refresh_loop(self) -> None:
         while True:
@@ -163,6 +251,11 @@ class Scraper:
         from playwright.sync_api import sync_playwright
 
         visible = db.get_setting("show_browser", "0") == "1"
+        # Như bản gốc: dùng lại trình duyệt đang mở. Mở profile lần hai trong cùng app
+        # sẽ bị Chrome từ chối vì profile đang được dùng.
+        if self._context is not None and getattr(self, "_context_visible", None) == visible:
+            return self._context
+        self._close_browser()
         args = [
             "--disable-blink-features=AutomationControlled",
             "--disable-backgrounding-occluded-windows",
@@ -175,6 +268,7 @@ class Scraper:
         if self._playwright is None:
             self._playwright = sync_playwright().start()
         errors = []
+        profile_busy = False
         for channel in ("msedge", "chrome", None):
             try:
                 kwargs = {
@@ -189,20 +283,29 @@ class Scraper:
                 self._context = self._playwright.chromium.launch_persistent_context(
                     str(PROFILE_DIR), **kwargs
                 )
+                self._context_visible = visible
                 return self._context
             except Exception as exc:
-                errors.append(f"{channel or 'chromium'}: {exc}")
-        raise RuntimeError(
-            "Không mở được trình duyệt – hãy cài Microsoft Edge hoặc Google Chrome\n"
-            + "\n".join(errors)
-        )
+                profile_busy = profile_busy or _profile_in_use(exc)
+                errors.append(f"{channel or 'chromium'}: {_first_line(exc)}")
+        self._close_browser()
+        print("\n".join(errors))
+        if profile_busy:
+            raise ProfileBusyError(
+                "Hồ sơ trình duyệt của tool đang bị một cửa sổ trình duyệt khác giữ "
+                f"({PROFILE_DIR}). Hãy tắt tool hoặc trình duyệt còn chạy với thư mục dữ liệu này rồi thử lại."
+            )
+        raise RuntimeError("Không mở được trình duyệt – hãy cài Microsoft Edge hoặc Google Chrome")
 
     def _close_browser(self) -> None:
         try:
             if self._context:
                 self._context.close()
+        except Exception:
+            pass
         finally:
             self._context = None
+            self._context_visible = None
             if self._playwright:
                 self._playwright.stop()
                 self._playwright = None
@@ -238,11 +341,8 @@ class Scraper:
                 break
             page.wait_for_timeout(500)
         if not raw:
-            body = page.content()
-            if "captcha" in body.lower():
-                raise RuntimeError(
-                    "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha"
-                )
+            if _has_captcha(page):
+                raise CaptchaError(CAPTCHA_MESSAGE)
             raise RuntimeError("Không đọc được trang kênh")
         data = json.loads(raw)
         scope = data.get("__DEFAULT_SCOPE__", {})
@@ -324,11 +424,7 @@ class Scraper:
                 break
 
         if not items and video_count and _has_captcha(page):
-            db.set_status(
-                key,
-                "error",
-                "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha",
-            )
+            db.set_status(key, "error", CAPTCHA_MESSAGE)
             page.close()
             return 0
 
