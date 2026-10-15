@@ -79,3 +79,4 @@ Bấm đúp một kênh (hoặc Enter). Có thẻ tóm tắt, phần **Phân tí
 | Bị dừng giữa chừng | Tool bị tắt khi đang quét; bấm *Quét lại các kênh này* ở thanh vàng. |
 | Hồ sơ trình duyệt đang bị giữ | Tắt cửa sổ trình duyệt/tool khác đang dùng cùng thư mục dữ liệu. |
 | Lỗi mạng, timeout | Tool tự thử lại tối đa 3 lần; nếu vẫn lỗi hãy thử lại sau. |
+| "TikTok ngừng trả thêm" / lấy được 0 video | TikTok giới hạn khi quét dồn dập (đã gặp sau vài lượt quét liên tiếp trong vài phút, kể cả quét 3 video). Thông tin kênh vẫn lấy được. Chờ vài phút rồi quét lại; không cần làm gì khác. Quét toàn bộ kênh rất nhiều video thường dừng sớm (đã thấy 476/1512), và tool không xóa video cũ trong trường hợp này. |

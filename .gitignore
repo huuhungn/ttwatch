@@ -11,3 +11,6 @@ browser_data/
 app.lock
 app.pid
 log.txt
+build/
+dist/
+*.spec

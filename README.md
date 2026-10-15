@@ -44,6 +44,14 @@ Cần đặt `TDK_DATA_DIR` sang thư mục trống: app từ chối chạy khi 
 
 Kiểm chứng bản dựng lại với exe gốc: xem `recovered/README.md`.
 
+## Đóng gói exe
+
+```powershell
+powershell -File build.ps1      # tạo dist\TheoDoiKenhTiktok\TheoDoiKenhTiktok.exe (~150 MB cả thư mục)
+```
+
+Cần `uv` trong PATH; script tự cài PyInstaller vào `.venv`. `build/`, `dist/`, `*.spec` đã được ignore. Exe dùng Edge/Chrome có sẵn của máy.
+
 ## Cấu trúc
 
 | File | Vai trò |
