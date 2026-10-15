@@ -28,6 +28,30 @@ class ParseInputTest(unittest.TestCase):
         self.assertEqual(found, ["demo.user"])
         self.assertEqual(invalid, [])
 
+    def test_wrapped_and_trailing_punctuation(self):
+        found, invalid = self.parse_input('(@Demo.User) "@other_1" @third! (https://www.tiktok.com/@Fourth_4).')
+        self.assertEqual(found, ["demo.user", "other_1", "third", "fourth_4"])
+        self.assertEqual(invalid, [])
+
+    def test_uppercase_url(self):
+        found, invalid = self.parse_input("HTTPS://WWW.TIKTOK.COM/@Demo.User")
+        self.assertEqual(found, ["demo.user"])
+        self.assertEqual(invalid, [])
+
+    def test_zero_width_and_fullwidth_at(self):
+        found, invalid = self.parse_input("@demo​.user ＠Other_1 ​third")
+        self.assertEqual(found, ["demo.user", "other_1", "third"])
+        self.assertEqual(invalid, [])
+
+    def test_dedupes_across_noisy_forms(self):
+        text = 'demo.user (@Demo.User) "@demo.user" @demo.user! ＠demo​.user HTTPS://WWW.TIKTOK.COM/@DEMO.USER'
+        self.assertEqual(self.parse_input(text), (["demo.user"], []))
+
+    def test_invalid_stays_invalid(self):
+        found, invalid = self.parse_input("nope! (x) @a$b")
+        self.assertEqual(found, [])
+        self.assertEqual(invalid, ["nope!", "(x)", "@a$b"])
+
     def test_empty(self):
         self.assertEqual(self.parse_input("  \n,"), ([], []))
 

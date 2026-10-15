@@ -16,8 +16,12 @@ import urllib.request
 import db
 from paths import PROFILE_DIR
 
-USERNAME_RE = re.compile(r"tiktok\.com/@([A-Za-z0-9._]{2,24})")
-SHORT_RE = re.compile(r"(?:vt|vm)\.tiktok\.com/\w+|tiktok\.com/t/\w+")
+USERNAME_RE = re.compile(r"tiktok\.com/@([A-Za-z0-9._]{2,24})", re.IGNORECASE)
+SHORT_RE = re.compile(r"(?:vt|vm)\.tiktok\.com/\w+|tiktok\.com/t/\w+", re.IGNORECASE)
+ZERO_WIDTH_RE = re.compile("[​‌‍⁠﻿]")
+WRAP_OPEN = "([{<\"'“‘«"
+WRAP_CLOSE = ")]}>\"'”’»"
+TRAILING_PUNCT = "!?:…"
 CAPTCHA_MESSAGE = "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha"
 TRANSIENT_MARKERS = (
     "timeout",
@@ -80,7 +84,7 @@ def describe_job(job: dict) -> str:
 
 
 def resolve_short_url(url: str) -> str | None:
-    if not url.startswith("http"):
+    if not url.lower().startswith("http"):
         url = "https://" + url
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="GET")
     try:
@@ -92,6 +96,15 @@ def resolve_short_url(url: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
+def _clean_token(tok: str) -> str:
+    """Bỏ nhiễu khi dán: ký tự rộng 0, @ toàn chiều rộng, ngoặc/nháy bao quanh, dấu câu cuối."""
+    tok = ZERO_WIDTH_RE.sub("", tok).replace("＠", "@")
+    tok = tok.lstrip(WRAP_OPEN)
+    if tok.startswith("@") or "tiktok.com" in tok.lower():
+        return tok.rstrip(WRAP_CLOSE + TRAILING_PUNCT)
+    return tok.rstrip(WRAP_CLOSE)
+
+
 def parse_input(text: str) -> tuple[list[str], list[str]]:
     tokens = re.split(r"[\s,;]+", text.strip())
     found: list[str] = []
@@ -100,18 +113,19 @@ def parse_input(text: str) -> tuple[list[str], list[str]]:
     for tok in tokens:
         if not tok:
             continue
+        raw, tok = tok, _clean_token(tok)
         match = USERNAME_RE.search(tok)
         if match:
             username = match.group(1).lower()
-        elif SHORT_RE.search(tok) or "tiktok.com" in tok:
+        elif SHORT_RE.search(tok) or "tiktok.com" in tok.lower():
             username = resolve_short_url(tok)
             if not username:
-                invalid.append(tok)
+                invalid.append(raw)
                 continue
         else:
             username = tok.lstrip("@").lower()
             if not re.fullmatch(r"[A-Za-z0-9._]{2,24}", username):
-                invalid.append(tok)
+                invalid.append(raw)
                 continue
         if username not in seen:
             seen.add(username)
