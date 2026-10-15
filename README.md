@@ -1,4 +1,6 @@
-# Theo dõi kênh TikTok — bản source để tự phát triển
+# ttwatch — theo dõi kênh TikTok, bản source để tự phát triển
+
+Tên cũ của repo là `channel-watch`. Tên dữ liệu và biến môi trường (`TheoDoiKenhTiktok_data`, `TDK_DATA_DIR`) giữ nguyên để không mất dữ liệu đã quét.
 
 Dựng lại từ `TheoDoiKenhTiktok.exe` (PyInstaller, Python 3.13). Đây là bản để sửa tiếp, không phải bản dịch bytecode từng dòng.
 
