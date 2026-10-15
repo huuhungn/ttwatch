@@ -196,7 +196,9 @@ class DbTest(unittest.TestCase):
     def test_settings_ignore_unknown_keys(self):
         db = _fresh_db("settings")
         db.set_settings({"show_browser": 1, "auto_refresh_minutes": "15", "bogus": "x"})
-        self.assertEqual(db.get_settings(), {"show_browser": "1", "auto_refresh_minutes": "15"})
+        got = db.get_settings()
+        self.assertEqual((got["show_browser"], got["auto_refresh_minutes"]), ("1", "15"))
+        self.assertNotIn("bogus", got)
 
     def test_interrupted_jobs_become_errors_on_start(self):
         db = _fresh_db("interrupted")
@@ -888,7 +890,8 @@ class ApiTest(unittest.TestCase):
     def test_settings_roundtrip(self):
         client, *_ = self._client("api-settings")
         res = client.post("/api/settings", json={"show_browser": "1", "auto_refresh_minutes": 30})
-        self.assertEqual(res.json(), {"show_browser": "1", "auto_refresh_minutes": "30"})
+        got = res.json()
+        self.assertEqual((got["show_browser"], got["auto_refresh_minutes"]), ("1", "30"))
         self.assertEqual(client.get("/api/settings").json(), res.json())
 
 

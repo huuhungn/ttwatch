@@ -101,7 +101,18 @@ def init():
 # show_browser: "1" = hiện cửa sổ trình duyệt để giải captcha.
 # auto_refresh_minutes: "0" = tắt; N > 0 = tự cập nhật nhanh mọi kênh sau mỗi N phút.
 
-DEFAULT_SETTINGS = {"show_browser": "0", "auto_refresh_minutes": "0"}
+DEFAULT_SETTINGS = {
+    "show_browser": "0",
+    "auto_refresh_minutes": "0",
+    # Thêm sau bản gốc: kiểu tự làm mới ("quick" | "scan10"), giờ yên lặng (giờ nguyên 0–23,
+    # rỗng = tắt) và ngưỡng cảnh báo.
+    "auto_refresh_mode": "quick",
+    "quiet_start": "",
+    "quiet_end": "",
+    "alerts_enabled": "1",
+    "alert_follow_pct": "5",
+    "alert_new_video": "1",
+}
 
 
 def get_setting(key, default=None):
@@ -112,7 +123,8 @@ def get_setting(key, default=None):
 
 def get_settings():
     with _lock, _conn() as c:
-        rows = {r["key"]: r["value"] for r in c.execute("SELECT key, value FROM settings")}
+        # Khóa "view:*" là chế độ xem đã lưu (insights.py), không phải cài đặt.
+        rows = {r["key"]: r["value"] for r in c.execute("SELECT key, value FROM settings WHERE key NOT LIKE 'view:%'")}
     return {**DEFAULT_SETTINGS, **rows}
 
 

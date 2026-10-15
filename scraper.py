@@ -14,6 +14,7 @@ import urllib.request
 from playwright.sync_api import sync_playwright
 
 import db
+import insights
 from paths import PROFILE_DIR
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._]{2,24}$")
@@ -211,6 +212,10 @@ class Scraper:
                 ch = db.get_channel(key)
                 if ch and ch["status"] == "done":
                     db.record_scan(key, describe_job(job))
+                    try:
+                        insights.check_alerts(key)
+                    except Exception:
+                        traceback.print_exc()  # cảnh báo hỏng không được làm hỏng lần quét
                 return
             except Exception as e:
                 traceback.print_exc()
@@ -234,8 +239,11 @@ class Scraper:
                 last = time.time()
                 continue
             if time.time() - last >= minutes * 60:
+                cfg = db.get_settings()
+                if insights.in_quiet_hours(time.localtime().tm_hour, cfg.get("quiet_start"), cfg.get("quiet_end")):
+                    continue  # giữ nguyên mốc: hết giờ yên lặng sẽ chạy ngay ở vòng kiểm tra kế tiếp
                 last = time.time()
-                self.enqueue(db.all_usernames(), {"mode": "quick"})
+                self.enqueue(db.all_usernames(), insights.auto_job(cfg.get("auto_refresh_mode")))
 
 
     def _browser(self):
