@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import io
 import json
 import os
@@ -11,7 +12,7 @@ from datetime import datetime
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -209,27 +210,53 @@ def export_channels(usernames: str = ""):
     )
 
 
+VIDEO_EXPORT_HEADERS = [
+    "id",
+    "description",
+    "create_time",
+    "duration",
+    "play",
+    "digg",
+    "comment",
+    "share",
+    "collect",
+    "music",
+]
+
+
 @app.get("/api/export/videos/{username}.xlsx")
 def export_videos(username: str):
     videos = db.list_videos(username)
-    headers = [
-        "id",
-        "description",
-        "create_time",
-        "duration",
-        "play",
-        "digg",
-        "comment",
-        "share",
-        "collect",
-        "music",
-    ]
+    headers = VIDEO_EXPORT_HEADERS
     rows = [[video.get(h) for h in headers] for video in videos]
     buf = _workbook(headers, rows)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={username}.xlsx"},
+    )
+
+
+def _csv_cell(value):
+    # Ô văn bản bắt đầu bằng = + - @ bị bảng tính hiểu là công thức; số giữ nguyên.
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
+@app.get("/api/export/videos/{username}.csv")
+def export_videos_csv(username: str):
+    videos = db.list_videos(username)
+    headers = VIDEO_EXPORT_HEADERS
+    out = io.StringIO(newline="")
+    writer = csv.writer(out)
+    writer.writerow(headers)
+    for video in videos:
+        writer.writerow([_csv_cell(video.get(h)) for h in headers])
+    return Response(
+        out.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={username}.csv"},
     )
 
 

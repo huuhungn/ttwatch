@@ -572,5 +572,73 @@ class InstanceLockTest(unittest.TestCase):
         self.assertEqual(dbmod.get_channel("legacy")["username"], "legacy")
 
 
+class ExportCsvTest(unittest.TestCase):
+    def _client(self, name):
+        import sys
+
+        sys.path.insert(0, str(ROOT))
+        import app as appmod
+        import db as dbmod
+        from fastapi.testclient import TestClient
+
+        # Nhả khóa dữ liệu của app để các test khác còn xóa được thư mục DATA.
+        appmod._instance.release()
+        data = DATA / name
+        if data.exists():
+            shutil.rmtree(data)
+        data.mkdir(parents=True)
+        dbmod.DB_PATH = data / "data.db"
+        dbmod.init()
+        dbmod.add_channels(["demo"])
+        return TestClient(appmod.app), dbmod
+
+    def test_csv_matches_xlsx_and_neutralises_formulas(self):
+        import csv
+        import io
+
+        from openpyxl import load_workbook
+
+        client, dbmod = self._client("export_csv")
+        base = {"cover": "", "duration": 5, "digg": 4, "comment": 3, "share": 2, "collect": 1}
+        videos = [
+            {"id": "v1", "description": "=SUM(A1)", "create_time": 1_700_000_001, "play": 100, "music": "@mix"},
+            {"id": "v2", "description": "Xin chào, \"Việt\"\nNam", "create_time": 1_700_000_002, "play": -7, "music": "-x"},
+            {"id": "v3", "description": "+1 ok", "create_time": 1_700_000_003, "play": 0, "music": ""},
+        ]
+        dbmod.finish_scan("demo", [{**base, **video} for video in videos], full=True)
+
+        res = client.get("/api/export/videos/demo.csv")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.headers["content-type"].startswith("text/csv"))
+        self.assertEqual(res.headers["content-disposition"], "attachment; filename=demo.csv")
+        self.assertTrue(res.content.startswith(b"\xef\xbb\xbf"))
+        rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig"), newline="")))
+
+        sheet = load_workbook(io.BytesIO(client.get("/api/export/videos/demo.xlsx").content)).active
+        xlsx = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        self.assertEqual(rows[0], xlsx[0])
+        self.assertEqual([row[0] for row in rows[1:]], ["v3", "v2", "v1"])
+        self.assertEqual([row[0] for row in rows[1:]], [row[0] for row in xlsx[1:]])
+        by_id = {row[0]: row for row in rows[1:]}
+        self.assertEqual(by_id["v1"][1], "'=SUM(A1)")
+        self.assertEqual(by_id["v1"][9], "'@mix")
+        self.assertEqual(by_id["v2"][1], "Xin chào, \"Việt\"\nNam")
+        self.assertEqual(by_id["v2"][9], "'-x")
+        self.assertEqual(by_id["v2"][4], "-7")
+        self.assertEqual(by_id["v3"][1], "'+1 ok")
+        self.assertEqual(by_id["v3"][9], "")
+
+    def test_no_videos_returns_only_header(self):
+        import csv
+        import io
+
+        client, _ = self._client("export_csv_empty")
+        res = client.get("/api/export/videos/nobody.csv")
+        self.assertEqual(res.status_code, 200)
+        rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig"), newline="")))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][:3], ["id", "description", "create_time"])
+
+
 if __name__ == "__main__":
     unittest.main()
