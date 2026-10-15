@@ -2,15 +2,16 @@
   --bg: #f5f6f8;
   --panel: #ffffff;
   --text: #1c2026;
-  --muted: #7a828e;
+  --muted: #5a626e;
   --border: #e3e6ea;
   --row-hover: #f2f5fa;
   --sel: #dce8ff;
   --sel-border: #9ab8f5;
   --accent: #fe2c55;
   --accent-2: #25c2c9;
-  --up: #128a4a;
-  --down: #d23a3a;
+  --up: #0d6e39;
+  --down: #b92b2b;
+  --accent-btn: #d91a3f;
   --head: #fafbfc;
   --shadow: 0 6px 24px rgba(20, 30, 50, 0.14);
   color-scheme: light;
@@ -20,13 +21,13 @@
     --bg: #121418;
     --panel: #1a1d22;
     --text: #e6e8eb;
-    --muted: #8a919c;
+    --muted: #9aa1ab;
     --border: #2b2f36;
     --row-hover: #20242a;
     --sel: #233556;
     --sel-border: #3d5d97;
     --up: #3ccf7d;
-    --down: #ff6b6b;
+    --down: #ff7e7e;
     --head: #1e2127;
     --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -77,8 +78,8 @@ header.top {
   gap: 6px;
   padding: 5px 11px;
   border-radius: 7px;
-  border: 1px solid #1877f2;
-  color: #1877f2;
+  border: 1px solid #1565d8;
+  color: #1565d8;
   font-weight: 600;
   font-size: 13px;
   text-decoration: none;
@@ -106,7 +107,7 @@ header.top {
   white-space: nowrap;
 }
 .btn:hover { background: var(--row-hover); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.primary { background: var(--accent-btn, var(--accent)); border-color: var(--accent-btn, var(--accent)); color: #fff; font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.07); }
 .btn.on { background: var(--sel); border-color: var(--sel-border); }
 .btn:disabled { opacity: 0.5; cursor: default; }
@@ -212,7 +213,7 @@ table.grid { border-collapse: separate; border-spacing: 0; width: 100%; }
 .avatar.ph { display: inline-block; }
 .uname { font-weight: 600; text-decoration: none; }
 .uname:hover { text-decoration: underline; }
-.tick { color: #20d5ec; font-size: 12px; margin-left: 3px; }
+.tick { color: #0891a8; font-size: 12px; margin-left: 3px; }
 .wrap-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 .delta { font-size: 11.5px; font-weight: 600; }
 .delta.up { color: var(--up); }

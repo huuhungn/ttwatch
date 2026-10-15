@@ -16,12 +16,13 @@
   </script>
 </head>
 <body>
+  <a class="skip" href="#table">Bỏ qua đến bảng kênh</a>
   <header class="top">
     <div class="logo"><img src="/static/logo.svg" alt="">Theo dõi kênh Tiktok</div>
     <nav class="tabs" role="tablist" aria-label="Màn hình">
-      <button class="tab" role="tab" data-tab="channels" aria-selected="true">Kênh</button>
-      <button class="tab" role="tab" data-tab="overview" aria-selected="false">Tổng quan</button>
-      <button class="tab" role="tab" data-tab="alerts" aria-selected="false">Cảnh báo<span class="count" id="alertCount" hidden></span></button>
+      <button class="tab" role="tab" id="tab-channels" aria-controls="pane-channels" data-tab="channels" aria-selected="true">Kênh</button>
+      <button class="tab" role="tab" id="tab-overview" aria-controls="pane-overview" data-tab="overview" aria-selected="false" tabindex="-1">Tổng quan</button>
+      <button class="tab" role="tab" id="tab-alerts" aria-controls="pane-alerts" data-tab="alerts" aria-selected="false" tabindex="-1">Cảnh báo<span class="count" id="alertCount" hidden aria-label="chưa đọc"></span></button>
     </nav>
     <div class="spacer"></div>
     <div class="worker" id="worker" aria-live="polite"></div>
@@ -36,7 +37,7 @@
     <button class="btn" id="btnRetryInterrupted">↻ Quét lại các kênh này</button>
   </div>
 
-  <section class="pane on" id="pane-channels" role="tabpanel">
+  <section class="pane on" id="pane-channels" role="tabpanel" aria-labelledby="tab-channels">
     <div class="add-box">
       <textarea id="input" aria-label="Danh sách kênh cần thêm" placeholder="Dán link kênh / link video / username vào đây – mỗi dòng một kênh, hoặc cách nhau bởi dấu phẩy, khoảng trắng.&#10;Ví dụ: https://www.tiktok.com/@abc   @xyz   https://vt.tiktok.com/ZSxxxx/"></textarea>
       <div class="add-side">
@@ -59,15 +60,17 @@
       <button class="btn" id="btnExport">⬇ Xuất Excel</button>
     </div>
 
-    <div class="table-wrap" id="table"></div>
+    <div class="chips" id="groupChips" role="group" aria-label="Lọc nhanh theo nhóm" hidden></div>
+
+    <div class="table-wrap" id="table" tabindex="-1"></div>
     <div class="statusbar" id="statusbar"></div>
   </section>
 
-  <section class="pane scroll" id="pane-overview" role="tabpanel"></section>
-  <section class="pane scroll" id="pane-alerts" role="tabpanel"></section>
+  <section class="pane scroll" id="pane-overview" role="tabpanel" aria-labelledby="tab-overview"></section>
+  <section class="pane scroll" id="pane-alerts" role="tabpanel" aria-labelledby="tab-alerts"></section>
 
   <aside class="drawer-shade" id="drawerShade" hidden></aside>
-  <aside class="drawer" id="drawer" role="dialog" aria-label="Chi tiết kênh" aria-hidden="true"></aside>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Chi tiết kênh" aria-hidden="true"></aside>
 
   <dialog id="dlgSettings">
     <h3>Cài đặt</h3>
@@ -210,6 +213,7 @@
     <div class="scan-opts" style="margin-bottom:10px">
       <div class="seg" id="cmpMetric"></div>
       <div class="seg" id="cmpRange"></div>
+      <div class="seg" id="cmpMode"></div>
     </div>
     <div id="cmpChart"></div>
     <div class="legend" id="cmpLegend"></div>

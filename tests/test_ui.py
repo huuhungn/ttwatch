@@ -215,6 +215,12 @@ class UiTest(unittest.TestCase):
         self.assertEqual(p.locator("#cmpChart path.ln").count(), 2)
         p.click('[data-cm="total_views"]')
         p.wait_for_function("document.querySelector('#cmpMetric .on').dataset.cm === 'total_views'")
+        p.click('[data-cp="1"]')
+        # ở chế độ %, mọi kênh bắt đầu từ 0% nên các đường xuất phát cùng một điểm dù khác quy mô
+        p.wait_for_function("""() => {
+            const ys = [...document.querySelectorAll('#cmpChart path.ln')].map(x => x.getAttribute('d').match(/^M[\d.]+,([\d.]+)/)[1]);
+            return ys.length === 2 && ys[0] === ys[1];
+        }""")
         self.shot("compare")
         p.click("#cmpClose")
 
@@ -242,6 +248,104 @@ class UiTest(unittest.TestCase):
         p.click("#btnViews")
         p.click('.ctx-item:has-text("Chỉ Alpha")')
         p.wait_for_function("document.querySelector('#search').value === 'alpha'")
+
+    def test_group_chips_filter_rename_and_clear(self):
+        p = self.page
+        self.open_home()
+        p.wait_for_selector("#groupChips .chip")
+        names = p.locator("#groupChips .chip").all_inner_texts()
+        self.assertTrue(any("Nhóm A" in n for n in names))
+        self.assertTrue(any("Chưa gắn nhóm" in n for n in names))
+        p.click('#groupChips .chip:has-text("Chưa gắn nhóm")')
+        p.wait_for_function("document.querySelectorAll('#table tbody tr').length === 1")
+        p.click('#groupChips .chip:has-text("Tất cả")')
+        p.wait_for_function("document.querySelectorAll('#table tbody tr').length === 3")
+        p.click('#groupChips .chip:has-text("Nhóm A")', button="right")
+        p.click('.ctx-item:has-text("Đổi tên nhóm")')
+        p.fill("#promptInput", "Nhóm B")
+        p.click("#promptOk")
+        p.wait_for_selector('#groupChips .chip:has-text("Nhóm B")')
+        self.assertEqual(self.db.get_channel("alpha")["group_name"], "Nhóm B")
+        p.click('#groupChips .chip:has-text("Nhóm B")', button="right")
+        p.click('.ctx-item:has-text("Bỏ nhóm này")')
+        p.wait_for_function("document.querySelectorAll('#groupChips .chip').length === 0 || document.querySelector('#groupChips').hidden")
+        self.assertEqual(self.db.get_channel("alpha")["group_name"], "")
+        # trả lại dữ liệu cho các test khác
+        self.db.update_meta(["alpha", "beta"], "Nhóm A")
+
+    def test_keyboard_only_navigation(self):
+        p = self.page
+        self.open_home()
+        p.focus("#tab-channels")
+        p.keyboard.press("ArrowRight")
+        p.wait_for_selector("#pane-overview.on")
+        self.assertEqual(p.evaluate("document.activeElement.id"), "tab-overview")
+        self.assertEqual(p.evaluate("document.querySelector('#tab-channels').tabIndex"), -1)
+        p.keyboard.press("Home")
+        p.wait_for_selector("#pane-channels.on")
+        p.focus("body")
+        p.keyboard.press("ArrowDown")
+        p.keyboard.press("ArrowDown")
+        self.assertEqual(p.locator("#table tbody tr.sel").count(), 1)
+        self.assertIn("Beta", p.locator("#table tbody tr.sel").inner_text())
+        p.keyboard.press("Shift+ArrowDown")
+        self.assertEqual(p.locator("#table tbody tr.sel").count(), 2)
+        p.keyboard.press("Space")
+        p.wait_for_selector("#drawer.on")
+        # focus phải ở trong drawer, và trả về khi đóng
+        self.assertTrue(p.evaluate("document.querySelector('#drawer').contains(document.activeElement)"))
+        p.keyboard.press("Escape")
+        p.wait_for_function("!document.querySelector('#drawer').classList.contains('on')")
+
+    def test_name_and_username_columns_stay_while_scrolling(self):
+        p = self.page
+        p.set_viewport_size({"width": 700, "height": 700})
+        self.open_home()
+        p.evaluate("document.querySelector('#table').scrollLeft = 400")
+        a = p.evaluate("document.querySelector('td.col-stt').getBoundingClientRect().left")
+        b = p.evaluate("document.querySelector('td.col-username').getBoundingClientRect().left")
+        wrap = p.evaluate("document.querySelector('#table').getBoundingClientRect().left")
+        self.assertAlmostEqual(a, wrap, delta=3)
+        self.assertAlmostEqual(b, wrap + 44, delta=4)
+        self.shot("narrow")
+
+    def test_text_contrast_meets_aa_in_both_themes(self):
+        p = self.page
+        self.open_home()
+        p.click('.tab[data-tab="alerts"]')
+        p.wait_for_selector(".alert-item")
+        p.click('.tab[data-tab="channels"]')
+        script = """
+        () => {
+          const lum = (c) => { const f = (v) => { v/=255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); };
+            return 0.2126*f(c[0]) + 0.7152*f(c[1]) + 0.0722*f(c[2]); };
+          const parse = (s) => { const m = s.match(/rgba?\\(([^)]+)\\)/); if (!m) return null;
+            const a = m[1].split(',').map(x => parseFloat(x)); return [a[0], a[1], a[2], a.length > 3 ? a[3] : 1]; };
+          const bgOf = (el) => { for (let e = el; e; e = e.parentElement) {
+              const c = parse(getComputedStyle(e).backgroundColor); if (c && c[3] > 0.5) return c; }
+            return parse(getComputedStyle(document.body).backgroundColor); };
+          const bad = [];
+          const seen = new Set();
+          const sel = 'th, td, .muted, .badge, .btn, .tab, .delta, .statusbar, .toolbar, .chip, .detect, .add-scan, label, small, h3, .logo';
+          for (const el of document.querySelectorAll(sel)) {
+            if (!el.offsetParent && el.tagName !== 'BODY') continue;
+            const text = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+            if (!text) continue;
+            const fg = parse(getComputedStyle(el).color), bg = bgOf(el);
+            if (!fg || !bg) continue;
+            const L1 = lum(fg), L2 = lum(bg);
+            const r = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+            const key = el.className + '|' + getComputedStyle(el).color + '|' + getComputedStyle(el).backgroundColor;
+            if (r < 4.5 && !seen.has(key)) { seen.add(key); bad.push([el.tagName + '.' + el.className, el.textContent.trim().slice(0, 24), r.toFixed(2)]); }
+          }
+          return bad;
+        }
+        """
+        for theme in ("light", "dark"):
+            p.evaluate(f"document.documentElement.dataset.theme = '{theme}'")
+            p.wait_for_timeout(50)
+            bad = p.evaluate(script)
+            self.assertEqual(bad, [], f"tương phản dưới 4,5:1 ở giao diện {theme}")
 
     def test_videos_page_summary_and_star(self):
         p = self.page

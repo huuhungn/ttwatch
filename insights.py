@@ -315,7 +315,7 @@ def check_alerts(key):
 def list_alerts(limit=100, unread_only=False):
     with db._lock, db._conn() as c:
         where = "WHERE read=0" if unread_only else ""
-        rows = [dict(r) for r in c.execute(f"SELECT * FROM alerts {where} ORDER BY id DESC LIMIT ?", (limit,))]
+        rows = [dict(r) for r in c.execute(f"SELECT * FROM alerts {where} ORDER BY ts DESC, id DESC LIMIT ?", (limit,))]
         unread = c.execute("SELECT COUNT(*) FROM alerts WHERE read=0").fetchone()[0]
     return {"alerts": rows, "unread": unread}
 

@@ -184,16 +184,81 @@ function updateGroups(rows) {
   const groups = [...new Set(rows.map((r) => r.group_name).filter(Boolean))].sort();
   const sel = $("#groupFilter");
   const cur = sel.value;
-  sel.innerHTML = '<option value="">Tất cả nhóm</option>' + groups.map((g) => `<option>${esc(g)}</option>`).join("");
-  sel.value = groups.includes(cur) ? cur : "";
+  const hasNone = rows.some((r) => !r.group_name);
+  sel.innerHTML =
+    '<option value="">Tất cả nhóm</option>' +
+    (groups.length && hasNone ? '<option value="__none__">(Chưa gắn nhóm)</option>' : "") +
+    groups.map((g) => `<option>${esc(g)}</option>`).join("");
+  sel.value = groups.includes(cur) || (cur === "__none__" && hasNone) ? cur : "";
   $("#groupList").innerHTML = groups.map((g) => `<option value="${esc(g)}">`).join("");
+  renderChips(rows, groups, hasNone);
+}
+
+// Chip nhóm: lọc nhanh bằng một cú bấm; chuột phải để đổi tên hoặc bỏ nhóm cho cả nhóm.
+function renderChips(rows, groups, hasNone) {
+  const box = $("#groupChips");
+  box.hidden = groups.length === 0;
+  if (!groups.length) return;
+  const cur = $("#groupFilter").value;
+  const count = (g) => rows.filter((r) => r.group_name === g).length;
+  const chip = (value, label, n) =>
+    `<button class="chip" data-g="${esc(value)}" aria-pressed="${cur === value}">${esc(label)}<span class="n">${n}</span></button>`;
+  box.innerHTML =
+    chip("", "Tất cả", rows.length) +
+    groups.map((g) => chip(g, g, count(g))).join("") +
+    (hasNone ? chip("__none__", "Chưa gắn nhóm", rows.filter((r) => !r.group_name).length) : "");
+}
+
+$("#groupChips").addEventListener("click", (e) => {
+  const b = e.target.closest(".chip");
+  if (!b) return;
+  $("#groupFilter").value = b.dataset.g;
+  applyFilter();
+  renderChips(rowsNow(), [...new Set(rowsNow().map((r) => r.group_name).filter(Boolean))].sort(), rowsNow().some((r) => !r.group_name));
+});
+
+$("#groupChips").addEventListener("contextmenu", (e) => {
+  const b = e.target.closest(".chip");
+  if (!b || !b.dataset.g || b.dataset.g === "__none__") return;
+  e.preventDefault();
+  const g = b.dataset.g;
+  const members = () => rowsNow().filter((r) => r.group_name === g).map((r) => r.username);
+  ContextMenu.show(e.clientX, e.clientY, [
+    { header: `Nhóm "${g}" (${members().length} kênh)` },
+    {
+      icon: "✎", label: "Đổi tên nhóm…",
+      async action() {
+        const v = await prompt2(`Đổi tên nhóm "${g}"`, g, "Gộp vào nhóm khác bằng cách nhập tên nhóm đó.");
+        if (!v || v === g) return;
+        await api("/api/channels/meta", { usernames: members(), group_name: v });
+        if ($("#groupFilter").value === g) $("#groupFilter").value = v;
+        toast(`Đã đổi tên nhóm thành "${v}"`);
+        lastJson = "";
+        load();
+      },
+    },
+    {
+      icon: "✕", label: "Bỏ nhóm này khỏi các kênh", danger: true,
+      async action() {
+        await api("/api/channels/meta", { usernames: members(), group_name: "" });
+        if ($("#groupFilter").value === g) $("#groupFilter").value = "";
+        toast(`Đã bỏ nhóm "${g}" (các kênh vẫn còn)`);
+        lastJson = "";
+        load();
+      },
+    },
+  ]);
+});
+
+function rowsNow() {
+  return window.channelRows || [];
 }
 
 function applyFilter() {
   const q = $("#search").value.trim().toLowerCase();
   const g = $("#groupFilter").value;
   table.setFilter((r) => {
-    if (g && r.group_name !== g) return false;
+    if (g === "__none__" ? r.group_name : g && r.group_name !== g) return false;
     if (!q) return true;
     return [r.username, r.nickname, r.note, r.bio, r.group_name].some((s) => (s || "").toLowerCase().includes(q));
   });

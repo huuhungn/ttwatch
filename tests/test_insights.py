@@ -270,6 +270,15 @@ class AlertsTest(unittest.TestCase):
             del sys.modules["tray"]
         self.assertEqual(sent, [("một\nhai", "Cảnh báo kênh TikTok")])
 
+    def test_list_is_newest_first_by_time_not_insertion(self):
+        import insights
+
+        self._channel("alert-order")
+        insights.add_alert("demo", "x", "cũ", ts=1000)
+        insights.add_alert("demo", "x", "mới", ts=5000)
+        insights.add_alert("demo", "x", "giữa", ts=3000)
+        self.assertEqual([a["text"] for a in insights.list_alerts()["alerts"]], ["mới", "giữa", "cũ"])
+
     def test_table_is_capped(self):
         import insights
 

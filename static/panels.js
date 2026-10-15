@@ -1,7 +1,6 @@
 // Màn hình thêm sau bản gốc: tab, tổng quan, cảnh báo, chi tiết kênh, so sánh, chế độ xem,
 // nhập file, bảng lệnh, trợ giúp phím tắt. Dùng chung `table`, `load`, `refresh`… của main.js.
 
-const rowsNow = () => window.channelRows || [];
 const rowOf = (u) => rowsNow().find((c) => c.username === u);
 const displayName = (c) => "@" + (c.unique_id || c.username);
 const plainNf = (n) => Charts.full(n);
@@ -20,12 +19,24 @@ function showTab(name) {
     $(`#pane-${t}`).classList.toggle("on", t === name);
     const btn = document.querySelector(`.tab[data-tab="${t}"]`);
     btn.setAttribute("aria-selected", String(t === name));
+    btn.tabIndex = t === name ? 0 : -1;
   }
   if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
   if (name === "overview") renderOverview();
   if (name === "alerts") renderAlerts();
 }
-document.querySelectorAll(".tab").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+document.querySelectorAll(".tab").forEach((b) => {
+  b.onclick = () => showTab(b.dataset.tab);
+  // Mẫu tab của WAI-ARIA: mũi tên đổi tab, chỉ tab đang chọn nằm trong thứ tự Tab.
+  b.addEventListener("keydown", (e) => {
+    const i = TABS.indexOf(b.dataset.tab);
+    const next = e.key === "ArrowRight" ? (i + 1) % TABS.length : e.key === "ArrowLeft" ? (i + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    showTab(TABS[next]);
+    document.querySelector(`.tab[data-tab="${TABS[next]}"]`).focus();
+  });
+});
 
 // ---------------------------------------------------------------- tổng quan
 
@@ -170,9 +181,12 @@ $("#pane-alerts").addEventListener("click", async (e) => {
 const dr = { username: null, days: 30, metric: "followers", stop: null };
 const METRIC_LABEL = { followers: "Follow", likes: "Lượt thích", total_views: "Tổng view", video_count: "Số video" };
 
+let drawerReturnFocus = null;
+
 function openDrawer(target) {
   const username = typeof target === "string" ? target : target?.username;
   if (!username) return;
+  if (!dr.username) drawerReturnFocus = document.activeElement;
   dr.username = username;
   $("#drawerShade").hidden = false;
   requestAnimationFrame(() => {
@@ -191,6 +205,9 @@ function closeDrawer() {
   $("#drawerShade").classList.remove("on");
   $("#drawer").setAttribute("aria-hidden", "true");
   setTimeout(() => !dr.username && ($("#drawerShade").hidden = true), 220);
+  // Trả focus về chỗ người dùng đang đứng trước khi mở (bàn phím/đọc màn hình không bị mất vị trí).
+  if (drawerReturnFocus?.isConnected) drawerReturnFocus.focus?.();
+  drawerReturnFocus = null;
 }
 $("#drawerShade").addEventListener("click", closeDrawer);
 
@@ -272,10 +289,19 @@ $("#drawer").addEventListener("click", (e) => {
   if (d) { dr.days = +d.dataset.ddays; paintDrawer(); }
 });
 $("#drawer").tabIndex = -1;
+// Giữ Tab trong drawer khi nó đang mở (aria-modal).
+$("#drawer").addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const f = [...$("#drawer").querySelectorAll("button, a[href], input, select, [tabindex]:not([tabindex='-1'])")].filter((x) => !x.disabled && x.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 
 // ---------------------------------------------------------------- so sánh
 
-const cmp = { users: [], metric: "followers", days: 30, stop: null };
+const cmp = { users: [], metric: "followers", days: 30, pct: false, stop: null };
 
 function openCompare(sel) {
   cmp.users = sel.slice(0, 6).map((c) => c.username);
@@ -287,6 +313,7 @@ function openCompare(sel) {
 async function paintCompare() {
   $("#cmpMetric").innerHTML = Object.entries(METRIC_LABEL).map(([v, l]) => `<button data-cm="${v}" class="${v === cmp.metric ? "on" : ""}">${l}</button>`).join("");
   $("#cmpRange").innerHTML = [[7, "7 ngày"], [30, "30 ngày"], [90, "90 ngày"], [0, "Tất cả"]].map(([v, l]) => `<button data-cd="${v}" class="${v === cmp.days ? "on" : ""}">${l}</button>`).join("");
+  $("#cmpMode").innerHTML = [[0, "Giá trị"], [1, "% thay đổi"]].map(([v, l]) => `<button data-cp="${v}" class="${!!v === cmp.pct ? "on" : ""}" title="${v ? "Quy mọi kênh về mức 0% ở đầu kỳ để so kênh khác quy mô" : ""}">${l}</button>`).join("");
   let data;
   try {
     data = await api(`/api/compare?usernames=${encodeURIComponent(cmp.users.join(","))}&metric=${cmp.metric}&days=${cmp.days}`);
@@ -295,14 +322,21 @@ async function paintCompare() {
     return;
   }
   const names = cmp.users.filter((u) => data.series[u]);
-  const series = names.map((u, i) => ({ name: displayName(rowOf(u) || { username: u }), points: data.series[u], color: Charts.PALETTE[i % 6] }));
+  const toPct = (pts) => (pts.length && pts[0][1] ? pts.map((p) => [p[0], (p[1] / pts[0][1] - 1) * 100]) : pts.map((p) => [p[0], 0]));
+  const series = names.map((u, i) => ({
+    name: displayName(rowOf(u) || { username: u }),
+    points: cmp.pct ? toPct(data.series[u]) : data.series[u],
+    raw: data.series[u],
+    color: Charts.PALETTE[i % 6],
+  }));
   cmp.stop?.();
-  cmp.stop = Charts.line($("#cmpChart"), series, { fmt: plainNf, height: 280, label: "So sánh kênh" });
+  const pctFmt = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1).replace(".", ",") + "%";
+  cmp.stop = Charts.line($("#cmpChart"), series, { fmt: cmp.pct ? pctFmt : plainNf, height: 280, label: "So sánh kênh" });
   $("#cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("");
   $("#cmpTable").innerHTML =
     '<table class="mini"><tr><th>Kênh</th><th class="r">Hiện tại</th><th class="r">Đầu kỳ</th><th class="r">Thay đổi</th><th class="r">%</th></tr>' +
     series.map((s) => {
-      const p = s.points;
+      const p = s.raw;
       if (!p.length) return `<tr><td>${esc(s.name)}</td><td class="r" colspan="4">–</td></tr>`;
       const a = p[0][1], b = p[p.length - 1][1], d = b - a;
       return `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;background:${s.color}"></i>${esc(s.name)}</td><td class="r">${plainNf(b)}</td><td class="r">${plainNf(a)}</td><td class="r"><span class="delta ${d >= 0 ? "up" : "down"}">${d > 0 ? "+" : d < 0 ? "−" : ""}${plainNf(Math.abs(d))}</span></td><td class="r">${a ? ((d / a) * 100).toFixed(1).replace(".", ",") + "%" : "–"}</td></tr>`;
@@ -312,7 +346,9 @@ $("#dlgCompare").addEventListener("click", (e) => {
   const m = e.target.closest("[data-cm]");
   if (m) { cmp.metric = m.dataset.cm; paintCompare(); return; }
   const d = e.target.closest("[data-cd]");
-  if (d) { cmp.days = +d.dataset.cd; paintCompare(); }
+  if (d) { cmp.days = +d.dataset.cd; paintCompare(); return; }
+  const c = e.target.closest("[data-cp]");
+  if (c) { cmp.pct = c.dataset.cp === "1"; paintCompare(); }
 });
 $("#cmpClose").onclick = () => $("#dlgCompare").close();
 $("#dlgCompare").addEventListener("close", () => { cmp.stop?.(); cmp.stop = null; });
@@ -480,7 +516,7 @@ async function openPalette() {
   const cmds = buildCommands();
   const shade = document.createElement("div");
   shade.className = "palette-shade";
-  shade.innerHTML = `<div class="palette" role="dialog" aria-label="Bảng lệnh"><input type="text" placeholder="Gõ tên kênh hoặc lệnh…" aria-label="Tìm lệnh"><ul role="listbox"></ul></div>`;
+  shade.innerHTML = `<div class="palette" role="dialog" aria-modal="true" aria-label="Bảng lệnh"><input type="text" role="combobox" aria-expanded="true" aria-controls="paletteList" aria-autocomplete="list" placeholder="Gõ tên kênh hoặc lệnh…" aria-label="Tìm lệnh"><ul role="listbox" id="paletteList"></ul></div>`;
   document.body.appendChild(shade);
   paletteEl = shade;
   const input = $("input", shade), ul = $("ul", shade);
@@ -490,9 +526,10 @@ async function openPalette() {
     list = cmds.filter((c) => terms.every((t) => (c.key || fold(c.label)).includes(t) || fold(c.label).includes(t))).slice(0, 40);
     idx = Math.min(idx, Math.max(0, list.length - 1));
     ul.innerHTML = list.length
-      ? list.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === idx}"><span>${esc(c.label)}</span><span class="grp">${esc(c.group)}</span></li>`).join("")
+      ? list.map((c, i) => `<li role="option" id="pal-${i}" data-i="${i}" aria-selected="${i === idx}"><span>${esc(c.label)}</span><span class="grp">${esc(c.group)}</span></li>`).join("")
       : '<div class="none-yet">Không có kết quả.</div>';
     ul.children[idx]?.scrollIntoView?.({ block: "nearest" });
+    input.setAttribute("aria-activedescendant", list.length ? `pal-${idx}` : "");
   };
   const close = () => { shade.remove(); paletteEl = null; };
   const run = (i) => { const c = list[i]; if (!c) return; close(); c.run(); };
@@ -530,6 +567,22 @@ addEventListener("keydown", (e) => {
     return;
   }
   if (typing(e) || dialogOpen() || paletteEl || e.ctrlKey || e.metaKey || e.altKey) return;
+  if ((e.key === "ArrowDown" || e.key === "ArrowUp") && currentTab === "channels" && !dr.username && (e.target === document.body || e.target.closest?.('[role="tab"], #table'))) {
+    // Chọn dòng bằng mũi tên (bàn phím thuần): Shift giữ vùng chọn như Shift+click.
+    const view = table.view;
+    if (!view.length) return;
+    e.preventDefault();
+    const sel = table.getSelected();
+    const cur = sel.length ? view.indexOf(e.key === "ArrowDown" ? sel[sel.length - 1] : sel[0]) : -1;
+    const to = Math.max(0, Math.min(view.length - 1, cur + (e.key === "ArrowDown" ? 1 : -1)));
+    if (e.shiftKey && table.anchor !== null) table.selectRange(table.anchor, to, false);
+    else {
+      table.anchor = to;
+      table.selectRange(to, to, false);
+    }
+    table.tbody.rows[to]?.scrollIntoView({ block: "nearest" });
+    return;
+  }
   if (e.key === "?") { e.preventDefault(); $("#dlgHelp").showModal(); }
   else if (e.key === "1") showTab("channels");
   else if (e.key === "2") showTab("overview");
