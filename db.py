@@ -1,6 +1,7 @@
 import sqlite3
 import threading
 import time
+from datetime import datetime
 
 from paths import DB_PATH
 _lock = threading.RLock()
@@ -64,17 +65,34 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 """
 
 
+class _Conn(sqlite3.Connection):
+    """`with _conn() as c` commit/rollback rồi đóng hẳn.
+
+    Mặc định sqlite3 chỉ commit, kết nối nằm đó đến khi bị GC: trên Windows file DB bị
+    giữ khóa nên không xóa/di chuyển/sao lưu được ngay sau khi dùng xong.
+    """
+
+    def __exit__(self, *exc):
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+
 def _conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(DB_PATH, timeout=30)
+    c = sqlite3.connect(DB_PATH, timeout=30, factory=_Conn)
     c.row_factory = sqlite3.Row
     return c
 
 
 def init():
+    existed = DB_PATH.exists() and DB_PATH.stat().st_size > 0
+    if existed:
+        _backup_before_start()
     with _lock, _conn() as c:
         c.executescript(SCHEMA)
-        _add_missing_columns(c)
+        _migrate(c)
         c.execute("PRAGMA journal_mode=WAL")
         # Lần chạy trước bị tắt giữa chừng: kênh đang xếp hàng/đang quét không còn job nào thật.
         c.execute("UPDATE channels SET status='error', message='Bị dừng giữa chừng – hãy cập nhật lại' WHERE status IN ('queued','running')")
@@ -260,6 +278,109 @@ def _add_missing_columns(c):
         for name, decl in columns.items():
             if name not in have:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def _m_alerts(c):
+    c.executescript("""
+        CREATE TABLE IF NOT EXISTS alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            kind TEXT,
+            text TEXT,
+            ts INTEGER,
+            read INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts);
+    """)
+
+
+def _m_video_index(c):
+    c.execute("CREATE INDEX IF NOT EXISTS idx_videos_user_time ON videos(username, create_time)")
+
+
+# Mỗi migration chạy đúng một lần theo thứ tự và phải idempotent (DB tạo từ SCHEMA mới đã có
+# sẵn một phần). Version lưu ở PRAGMA user_version; DB của bản gốc là 0.
+MIGRATIONS = [
+    (1, _add_missing_columns),
+    (2, _m_alerts),
+    (3, _m_video_index),
+]
+SCHEMA_VERSION = MIGRATIONS[-1][0]
+
+
+def schema_version(c):
+    return c.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _migrate(c):
+    current = schema_version(c)
+    for version, fn in MIGRATIONS:
+        if version > current:
+            fn(c)
+    if current < SCHEMA_VERSION:
+        c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+
+BACKUP_KEEP = 7
+BACKUP_EVERY = 24 * 3600
+
+
+def backup_dir():
+    return DB_PATH.parent / "backups"
+
+
+def list_backups():
+    d = backup_dir()
+    return sorted(d.glob("data-*.db"), reverse=True) if d.is_dir() else []
+
+
+def backup_now(tag=""):
+    """Sao chép nhất quán (API backup của SQLite, an toàn khi đang ghi). Trả về đường dẫn hoặc None."""
+    try:
+        d = backup_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        base = f"data-{datetime.now():%Y%m%d-%H%M%S}{'-' + tag if tag else ''}"
+        dest = d / f"{base}.db"
+        n = 1
+        while dest.exists():
+            n += 1
+            dest = d / f"{base}-{n}.db"
+        with _lock:
+            src = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                out = sqlite3.connect(dest)
+                try:
+                    src.backup(out)
+                finally:
+                    out.close()
+            finally:
+                src.close()
+        for old in list_backups()[BACKUP_KEEP:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        return dest
+    except (OSError, sqlite3.Error):
+        # Sao lưu hỏng (ổ đầy, thư mục chỉ đọc) không được chặn việc mở app.
+        return None
+
+
+def _backup_before_start():
+    try:
+        probe = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            version = probe.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            probe.close()
+    except sqlite3.Error:
+        return
+    if version < SCHEMA_VERSION:
+        backup_now(f"v{version}")
+        return
+    last = list_backups()
+    if not last or time.time() - last[0].stat().st_mtime > BACKUP_EVERY:
+        backup_now()
 
 
 def record_scan(key, label):

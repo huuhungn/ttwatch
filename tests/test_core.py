@@ -1,5 +1,6 @@
 import os
 import queue
+import shutil
 import sys
 import tempfile
 import threading
@@ -134,7 +135,7 @@ class DbTest(unittest.TestCase):
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
             )
         ]
-        self.assertEqual(names, ["channels", "settings", "snapshots", "videos"])
+        self.assertEqual(names, ["alerts", "channels", "settings", "snapshots", "videos"])
         # Lần cập nhật sau của cùng video giữ lại số view trước đó để tính mức tăng.
         self.assertEqual(db.list_videos("demo_user")[0]["prev_play"], 100)
 
@@ -228,6 +229,84 @@ class DbTest(unittest.TestCase):
         columns = {row[1] for row in sqlite3.connect(path).execute("PRAGMA table_info(channels)")}
         self.assertTrue({"last_scan_at", "last_scan_label"} <= columns)
         self.assertEqual(dbmod.get_channel("legacy")["username"], "legacy")
+
+
+class SchemaVersionTest(unittest.TestCase):
+    def test_connection_is_closed_so_directory_can_be_removed(self):
+        db = _fresh_db("closed")
+        db.add_channels(["demo"])
+        db.list_channels()
+        db.get_settings()
+        shutil.rmtree(db.DB_PATH.parent)  # trên Windows sẽ PermissionError nếu còn kết nối mở
+
+    def test_new_and_legacy_databases_reach_the_same_version(self):
+        import sqlite3
+
+        db = _fresh_db("version-new")
+        with db._conn() as c:
+            self.assertEqual(db.schema_version(c), db.SCHEMA_VERSION)
+        db.init()
+        with db._conn() as c:
+            self.assertEqual(db.schema_version(c), db.SCHEMA_VERSION)
+
+        legacy = Path(tempfile.mkdtemp(prefix="version-legacy-", dir=DATA)) / "data.db"
+        old = sqlite3.connect(legacy)
+        old.executescript(db.SCHEMA.replace(
+            ",\n    last_scan_at INTEGER,\n    last_scan_label TEXT DEFAULT ''", ""))
+        old.execute("INSERT INTO channels(username) VALUES('legacy')")
+        old.commit()
+        self.assertEqual(old.execute("PRAGMA user_version").fetchone()[0], 0)
+        old.close()
+        db.DB_PATH = legacy
+        db.init()
+        with db._conn() as c:
+            self.assertEqual(db.schema_version(c), db.SCHEMA_VERSION)
+            tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertIn("alerts", tables)
+        self.assertEqual(db.get_channel("legacy")["username"], "legacy")
+
+    def test_migrating_an_old_database_makes_a_backup_first(self):
+        import sqlite3
+
+        db = _fresh_db("backup-premigrate")
+        with db._conn() as c:
+            c.execute("PRAGMA user_version=0")
+        db.add_channels(["keep_me"])
+        before = len(db.list_backups())
+        db.init()
+        backups = db.list_backups()
+        self.assertEqual(len(backups), before + 1)
+        self.assertIn("-v0", backups[0].name)
+        copy = sqlite3.connect(backups[0])
+        try:
+            self.assertEqual(copy.execute("SELECT username FROM channels").fetchall(), [("keep_me",)])
+        finally:
+            copy.close()
+
+    def test_daily_backup_and_rotation(self):
+        import os
+        import time
+
+        db = _fresh_db("backup-daily")
+        db.add_channels(["demo"])
+        db.init()  # có DB và chưa có bản sao lưu nào: tạo một bản
+        self.assertEqual(len(db.list_backups()), 1)
+        db.init()  # vừa sao lưu xong: không tạo thêm
+        self.assertEqual(len(db.list_backups()), 1)
+        for i in range(10):
+            path = db.backup_now(f"t{i}")
+            self.assertIsNotNone(path)
+            os.utime(path, (time.time() - 100 + i, time.time() - 100 + i))
+        self.assertEqual(len(db.list_backups()), db.BACKUP_KEEP)
+
+    def test_backup_failure_does_not_block_startup(self):
+        db = _fresh_db("backup-fail")
+        db.add_channels(["demo"])
+        blocker = db.DB_PATH.parent / "backups"
+        blocker.write_text("not a directory", encoding="utf-8")
+        self.assertIsNone(db.backup_now())
+        db.init()
+        self.assertTrue(db.channel_exists("demo"))
 
 
 class JobTest(unittest.TestCase):
