@@ -826,6 +826,8 @@ class InstanceLockTest(unittest.TestCase):
             out = subprocess.run(
                 [sys.executable, "-c", probe, str(data)],
                 cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+                # Tiến trình con in tiếng Việt: ép UTF-8 để không phụ thuộc bảng mã mặc định của máy/CI.
+                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
             ).stdout
             self.assertTrue(out.startswith("busy"), out)
             self.assertIn(f"PID {os.getpid()}", out)
