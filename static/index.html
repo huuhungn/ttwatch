@@ -6,45 +6,68 @@
   <title>Theo dõi kênh Tiktok</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/extra.css">
+  <script>
+    // Áp chủ đề trước khi vẽ để không bị nháy sáng/tối.
+    try {
+      const t = localStorage.getItem("theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch {}
+  </script>
 </head>
 <body>
   <header class="top">
     <div class="logo"><img src="/static/logo.svg" alt="">Theo dõi kênh Tiktok</div>
-    <a class="btn-group" href="https://www.facebook.com/groups/815190970340230" target="_blank" rel="noopener">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
-      Tham gia nhóm MFG - Kiếm Tiền Tiktok Global
-    </a>
-    <a class="btn-author" href="https://www.facebook.com/duckuongg/" target="_blank" rel="noopener" title="Facebook tác giả">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12.07C24 5.41 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.04V9.41c0-3.02 1.8-4.7 4.54-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.5c-1.5 0-1.96.93-1.96 1.89v2.26h3.32l-.53 3.49h-2.8V24C19.62 23.1 24 18.1 24 12.07z"/></svg>
-      Facebook tác giả
-    </a>
+    <nav class="tabs" role="tablist" aria-label="Màn hình">
+      <button class="tab" role="tab" data-tab="channels" aria-selected="true">Kênh</button>
+      <button class="tab" role="tab" data-tab="overview" aria-selected="false">Tổng quan</button>
+      <button class="tab" role="tab" data-tab="alerts" aria-selected="false">Cảnh báo<span class="count" id="alertCount" hidden></span></button>
+    </nav>
     <div class="spacer"></div>
-    <div class="worker" id="worker"></div>
+    <div class="worker" id="worker" aria-live="polite"></div>
+    <button class="icon-btn" id="btnPalette" title="Tìm kênh và chạy lệnh (Ctrl+K)" aria-label="Mở bảng lệnh">⌕</button>
+    <button class="icon-btn" id="btnHelp" title="Phím tắt (?)" aria-label="Phím tắt">?</button>
     <button class="btn" id="btnSettings">⚙ Cài đặt</button>
   </header>
 
-  <div class="add-box">
-    <textarea id="input" placeholder="Dán link kênh / link video / username vào đây – mỗi dòng một kênh, hoặc cách nhau bởi dấu phẩy, khoảng trắng.&#10;Ví dụ: https://www.tiktok.com/@abc   @xyz   https://vt.tiktok.com/ZSxxxx/"></textarea>
-    <div class="add-side">
-      <div class="add-scan">Quét: <div id="addScan"></div></div>
-      <span class="detect" id="detect">Ctrl + Enter để thêm nhanh</span>
-      <button class="btn primary" id="btnAdd">+ Thêm kênh</button>
+  <div class="banner warn" id="bannerInterrupted" hidden>
+    <span id="bannerText"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="btnRetryInterrupted">↻ Quét lại các kênh này</button>
+  </div>
+
+  <section class="pane on" id="pane-channels" role="tabpanel">
+    <div class="add-box">
+      <textarea id="input" aria-label="Danh sách kênh cần thêm" placeholder="Dán link kênh / link video / username vào đây – mỗi dòng một kênh, hoặc cách nhau bởi dấu phẩy, khoảng trắng.&#10;Ví dụ: https://www.tiktok.com/@abc   @xyz   https://vt.tiktok.com/ZSxxxx/"></textarea>
+      <div class="add-side">
+        <div class="add-scan">Quét: <div id="addScan"></div></div>
+        <span class="detect" id="detect">Ctrl + Enter để thêm nhanh</span>
+        <button class="btn primary" id="btnAdd">+ Thêm kênh</button>
+      </div>
     </div>
-  </div>
 
-  <div class="toolbar">
-    <input type="search" id="search" placeholder="Tìm username, tên kênh, ghi chú…">
-    <select id="groupFilter"><option value="">Tất cả nhóm</option></select>
-    <button class="btn" id="btnRefreshAll" title="Cập nhật follow, tim và các video mới nhất của tất cả kênh">↻ Cập nhật tất cả</button>
-    <button class="btn" id="btnScan" title="Quét video theo số lượng hoặc theo ngày cho các kênh đang chọn (hoặc tất cả)">⟳ Quét video…</button>
-    <div class="spacer"></div>
-    <button class="btn" id="btnCompact" title="Hiển thị số dạng rút gọn 1,2M">1,2M</button>
-    <button class="btn" id="btnColumns">☰ Cột</button>
-    <button class="btn" id="btnExport">⬇ Xuất Excel</button>
-  </div>
+    <div class="toolbar">
+      <input type="search" id="search" aria-label="Tìm kênh" placeholder="Tìm username, tên kênh, ghi chú…">
+      <select id="groupFilter" aria-label="Lọc theo nhóm"><option value="">Tất cả nhóm</option></select>
+      <button class="btn" id="btnViews" title="Lưu hoặc áp dụng bộ lọc, cột và sắp xếp">◧ Chế độ xem</button>
+      <button class="btn" id="btnRefreshAll" title="Cập nhật follow, tim và các video mới nhất của tất cả kênh">↻ Cập nhật tất cả</button>
+      <button class="btn" id="btnScan" title="Quét video theo số lượng hoặc theo ngày cho các kênh đang chọn (hoặc tất cả)">⟳ Quét video…</button>
+      <div class="spacer"></div>
+      <button class="btn" id="btnImport" title="Nhập danh sách kênh từ file txt/csv">⬆ Nhập</button>
+      <button class="btn" id="btnCompact" title="Hiển thị số dạng rút gọn 1,2M">1,2M</button>
+      <button class="btn" id="btnColumns">☰ Cột</button>
+      <button class="btn" id="btnExport">⬇ Xuất Excel</button>
+    </div>
 
-  <div class="table-wrap" id="table"></div>
-  <div class="statusbar" id="statusbar"></div>
+    <div class="table-wrap" id="table"></div>
+    <div class="statusbar" id="statusbar"></div>
+  </section>
+
+  <section class="pane scroll" id="pane-overview" role="tabpanel"></section>
+  <section class="pane scroll" id="pane-alerts" role="tabpanel"></section>
+
+  <aside class="drawer-shade" id="drawerShade" hidden></aside>
+  <aside class="drawer" id="drawer" role="dialog" aria-label="Chi tiết kênh" aria-hidden="true"></aside>
 
   <dialog id="dlgSettings">
     <h3>Cài đặt</h3>
@@ -57,6 +80,54 @@
       <label for="setAuto">Tự động cập nhật mỗi (phút)</label>
       <input type="number" id="setAuto" min="0" step="5">
       <small>0 = tắt. Tool chỉ tự cập nhật khi đang mở.</small>
+    </div>
+    <div class="field">
+      <label for="setAutoMode">Kiểu tự động cập nhật</label>
+      <select id="setAutoMode">
+        <option value="quick">Cập nhật nhanh (thông tin kênh + video mới nhất)</option>
+        <option value="scan10">Quét 10 video gần nhất</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Giờ yên lặng (không tự cập nhật)</label>
+      <div class="scan-opts">
+        <select id="setQuietStart"></select> →
+        <select id="setQuietEnd"></select>
+      </div>
+      <small>Để cả hai là "Tắt" nếu muốn chạy cả ngày.</small>
+    </div>
+    <div class="field row">
+      <input type="checkbox" id="setAlerts">
+      <label for="setAlerts">Tạo cảnh báo sau mỗi lần cập nhật</label>
+    </div>
+    <div class="field">
+      <label for="setAlertPct">Cảnh báo khi follow đổi từ (%)</label>
+      <input type="number" id="setAlertPct" min="0" step="0.5">
+      <small>0 = không cảnh báo theo follow.</small>
+    </div>
+    <div class="field row">
+      <input type="checkbox" id="setAlertVideo">
+      <label for="setAlertVideo">Cảnh báo khi kênh có video mới</label>
+    </div>
+    <div class="field">
+      <label for="setTheme">Giao diện</label>
+      <select id="setTheme">
+        <option value="auto">Theo hệ thống</option>
+        <option value="light">Sáng</option>
+        <option value="dark">Tối</option>
+      </select>
+    </div>
+    <div class="field row">
+      <input type="checkbox" id="setDense">
+      <label for="setDense">Bảng gọn (nhiều dòng hơn trên màn hình)</label>
+    </div>
+    <div class="field">
+      <label>Dữ liệu</label>
+      <div class="scan-opts">
+        <button class="btn" id="btnBackup">⬇ Tải bản sao lưu</button>
+        <button class="btn" id="btnAbout">ⓘ Giới thiệu</button>
+      </div>
+      <small id="backupInfo">Tool tự sao lưu mỗi ngày và trước khi nâng cấp cấu trúc dữ liệu (giữ 7 bản).</small>
     </div>
     <div class="dlg-actions">
       <button class="btn danger" id="btnShutdown" style="margin-right:auto" title="Tắt hẳn tool (dừng quét). Mở lại bằng file exe.">⏻ Tắt tool</button>
@@ -78,7 +149,77 @@
     </div>
   </dialog>
 
+  <dialog id="dlgAbout">
+    <h3>Giới thiệu</h3>
+    <div class="field">
+      <small>Công cụ theo dõi kênh TikTok công khai: số follow, tim, video và lịch sử thay đổi, lưu trên máy bạn. Không gửi dữ liệu đi đâu khác.</small>
+    </div>
+    <div class="field">
+      <a class="btn-group" href="https://www.facebook.com/groups/815190970340230" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+        Tham gia nhóm MFG - Kiếm Tiền Tiktok Global
+      </a>
+    </div>
+    <div class="field">
+      <a class="btn-author" href="https://www.facebook.com/duckuongg/" target="_blank" rel="noopener" title="Facebook tác giả">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12.07C24 5.41 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.04V9.41c0-3.02 1.8-4.7 4.54-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.5c-1.5 0-1.96.93-1.96 1.89v2.26h3.32l-.53 3.49h-2.8V24C19.62 23.1 24 18.1 24 12.07z"/></svg>
+        Facebook tác giả
+      </a>
+    </div>
+    <div class="dlg-actions"><button class="btn primary" id="aboutClose">Đóng</button></div>
+  </dialog>
+
+  <dialog id="dlgHelp">
+    <h3>Phím tắt</h3>
+    <div class="keys">
+      <kbd>Ctrl K</kbd><span>Bảng lệnh: tìm kênh, chuyển màn hình, chạy hành động</span>
+      <kbd>?</kbd><span>Mở bảng này</span>
+      <kbd>Enter</kbd><span>Mở danh sách video của kênh đang chọn</span>
+      <kbd>Space</kbd><span>Xem biểu đồ và phân tích của kênh đang chọn</span>
+      <kbd>F5</kbd><span>Cập nhật nhanh các kênh đang chọn</span>
+      <kbd>Del</kbd><span>Xóa kênh đang chọn (có thể hoàn tác trong vài giây)</span>
+      <kbd>Ctrl A</kbd><span>Chọn tất cả</span>
+      <kbd>Ctrl C</kbd><span>Sao chép username các kênh đang chọn</span>
+      <kbd>Ctrl Enter</kbd><span>Thêm kênh từ ô nhập</span>
+      <kbd>1 2 3</kbd><span>Chuyển sang Kênh / Tổng quan / Cảnh báo</span>
+      <kbd>Esc</kbd><span>Đóng bảng chi tiết, bỏ chọn</span>
+    </div>
+    <div class="dlg-actions"><button class="btn primary" id="helpClose">Đóng</button></div>
+  </dialog>
+
+  <dialog id="dlgImport" class="wide">
+    <h3>Nhập kênh từ file</h3>
+    <div class="field">
+      <div class="import-drop" id="importDrop">Kéo thả file .txt / .csv vào đây, hoặc <button class="btn" id="importPick">chọn file…</button>
+        <input type="file" id="importFile" accept=".txt,.csv,text/plain,text/csv" hidden></div>
+      <small>CSV có thể có dòng tiêu đề <code>username,group,note</code> để gán nhóm và ghi chú. File .txt: mỗi dòng một kênh hoặc link.</small>
+    </div>
+    <div class="field">
+      <textarea id="importText" rows="8" aria-label="Nội dung nhập" placeholder="username,group,note&#10;@abc,Nhóm A,ghi chú"></textarea>
+      <small id="importInfo"></small>
+    </div>
+    <div class="field"><label>Quét sau khi thêm</label><div id="importScan"></div></div>
+    <div class="dlg-actions">
+      <button class="btn" id="importCancel">Hủy</button>
+      <button class="btn primary" id="importOk">Nhập</button>
+    </div>
+  </dialog>
+
+  <dialog id="dlgCompare" class="wide">
+    <h3 id="cmpTitle">So sánh kênh</h3>
+    <div class="scan-opts" style="margin-bottom:10px">
+      <div class="seg" id="cmpMetric"></div>
+      <div class="seg" id="cmpRange"></div>
+    </div>
+    <div id="cmpChart"></div>
+    <div class="legend" id="cmpLegend"></div>
+    <div id="cmpTable" style="margin-top:12px"></div>
+    <div class="dlg-actions"><button class="btn primary" id="cmpClose">Đóng</button></div>
+  </dialog>
+
   <script src="/static/common.js"></script>
+  <script src="/static/charts.js"></script>
   <script src="/static/main.js"></script>
+  <script src="/static/panels.js"></script>
 </body>
 </html>

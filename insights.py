@@ -38,6 +38,19 @@ def history(username, days=None, now=None):
     return _downsample(rows)
 
 
+def sparklines(days=30, points=24, now=None):
+    """{username: [followers...]} cho cột xu hướng; một truy vấn cho mọi kênh."""
+    now = int(now or time.time())
+    out = {}
+    with db._lock, db._conn() as c:
+        for r in c.execute(
+            "SELECT username, followers FROM snapshots WHERE ts >= ? AND followers IS NOT NULL ORDER BY username, ts, id",
+            (now - int(days) * DAY,),
+        ):
+            out.setdefault(r["username"], []).append(r["followers"])
+    return {u: _downsample(v, points) for u, v in out.items() if len(v) >= 2}
+
+
 def compare(usernames, metric="followers", days=None, now=None):
     if metric not in METRICS:
         metric = "followers"

@@ -62,6 +62,32 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(insights.compare(["a"], "total_views", now=NOW)["series"]["a"], [[NOW - 100, 5]])
 
 
+class SparklineTest(unittest.TestCase):
+    def test_one_query_for_all_channels_and_skips_single_points(self):
+        import insights
+
+        db = _fresh_db("spark")
+        db.add_channels(["a", "b", "c"])
+        for i in range(100):
+            _snap(db, "a", NOW - (100 - i) * 600, 100 + i)
+        _snap(db, "b", NOW - 100, 5)  # một điểm: không vẽ được đường
+        _snap(db, "c", NOW - 40 * DAY, 1)
+        _snap(db, "c", NOW - 39 * DAY, 2)  # ngoài cửa sổ 30 ngày
+        out = insights.sparklines(30, points=24, now=NOW)
+        self.assertEqual(set(out), {"a"})
+        self.assertLessEqual(len(out["a"]), 25)
+        self.assertEqual(out["a"][0], 100)
+        self.assertEqual(out["a"][-1], 199)
+
+    def test_endpoint(self):
+        client, db = _client("api-spark")
+        db.add_channels(["a"])
+        now = int(time.time())
+        _snap(db, "a", now - 200, 1)
+        _snap(db, "a", now - 100, 2)
+        self.assertEqual(client.get("/api/sparklines?days=7").json(), {"a": [1, 2]})
+
+
 class OverviewTest(unittest.TestCase):
     def setUp(self):
         import insights

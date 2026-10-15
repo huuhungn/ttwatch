@@ -22,11 +22,21 @@ const columns = [
   { key: "updated_at", label: "Cập nhật", hidden: true, render: (r) => fmtAgo(r.updated_at) },
 ];
 
+let medianPlay = 0;
+const median = (a) => {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
 const table = new DataTable({
   el: $("#table"),
   columns,
   rowKey: (r) => r.id,
   storageKey: "videos-table",
+  // Vượt trội: gấp đôi trung vị của kênh (cần ≥ 5 video để trung vị có nghĩa).
+  rowClass: (r) => (table.rows.length >= 5 && medianPlay && r.play >= 2 * medianPlay ? "row-star" : ""),
   onOpen: (r) => openUrls([videoUrl(r)]),
   onContextMenu: (e, sel) => showMenu(e.clientX, e.clientY, sel),
   onSelectionChange: updateStatusbar,
@@ -54,7 +64,67 @@ function copyStats(rows) {
   copyText([head.join("\t"), ...lines].join("\n"), `Đã sao chép số liệu ${rows.length} video`);
 }
 
+let summaryKey = "";
+function renderSummary() {
+  const rows = table.view;
+  const key = rows.length + ":" + rows.reduce((a, r) => a + r.play, 0) + ":" + (rows[0]?.id || "");
+  if (key === summaryKey) return;
+  summaryKey = key;
+  const plays = rows.map((r) => r.play || 0);
+  const total = plays.reduce((a, b) => a + b, 0);
+  const inter = rows.reduce((a, r) => a + r.digg + r.comment + r.share + r.collect, 0);
+  const times = rows.map((r) => r.create_time).filter(Boolean);
+  const weeks = times.length > 1 ? Math.max(1, (Math.max(...times) - Math.min(...times)) / 604800) : 0;
+  const best = rows.reduce((b, r) => (!b || r.play > b.play ? r : b), null);
+  const card = (k, v, s = "") => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
+  $("#summary").innerHTML =
+    card("Video", fmtNum(rows.length)) +
+    card("Tổng view", fmtNum(total)) +
+    card("View trung vị", fmtNum(Math.round(median(plays))), "nửa số video trên mức này") +
+    card("Cao nhất", fmtNum(best?.play ?? null), best ? `<a class="vlink" href="${esc(videoUrl(best))}" target="_blank">${esc((best.description || "").slice(0, 40) || "…/video/" + best.id)}</a>` : "") +
+    card("Tương tác", total ? (inter / total * 100).toFixed(2).replace(".", ",") + "%" : "–") +
+    card("Đăng / tuần", weeks ? (rows.length / weeks).toFixed(1).replace(".", ",") : "–");
+  renderAnalysis(rows);
+}
+
+let stopTimeline = null;
+function renderAnalysis(rows) {
+  if (!$("#analysis").open) return;
+  stopTimeline?.();
+  const pts = rows.filter((r) => r.create_time).map((r) => [r.create_time, r.play]).sort((a, b) => a[0] - b[0]);
+  stopTimeline = Charts.line($("#anTimeline"), [{ name: "View", points: pts }], {
+    fmt: Charts.full, height: 190, label: "View theo ngày đăng", empty: "Chưa có video để vẽ.",
+  });
+  const buckets = [["<1k", 1e3], ["1k–10k", 1e4], ["10k–100k", 1e5], ["100k–1M", 1e6], ["≥1M", Infinity]];
+  const counts = buckets.map(([label, max], i) => ({
+    label,
+    value: rows.filter((r) => r.play < max && r.play >= (i ? buckets[i - 1][1] : -Infinity)).length,
+  }));
+  $("#anDist").innerHTML = Charts.bars(counts);
+  const cells = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => []));
+  for (const r of rows) {
+    if (!r.create_time) continue;
+    const d = new Date(r.create_time * 1000);
+    cells[(d.getDay() + 6) % 7][d.getHours()].push(r.play || 0);
+  }
+  $("#anHeat").innerHTML = Charts.heatmap(
+    cells.map((row) => row.map((c) => ({ count: c.length, avg_views: c.length ? Math.round(c.reduce((a, b) => a + b, 0) / c.length) : 0 })))
+  );
+}
+// Phần phân tích đóng sẵn để bảng video có chỗ; nhớ lựa chọn của người dùng.
+try {
+  $("#analysis").open = localStorage.getItem("analysis-open") === "1";
+} catch {}
+$("#analysis").addEventListener("toggle", () => {
+  try {
+    localStorage.setItem("analysis-open", $("#analysis").open ? "1" : "0");
+  } catch {}
+  summaryKey = "";
+  renderSummary();
+});
+
 function updateStatusbar(sel) {
+  renderSummary();
   const rows = sel.length ? sel : table.view;
   const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
   const views = sum("play");
@@ -106,6 +176,8 @@ async function load() {
     if (json !== lastJson) {
       lastJson = json;
       renderHead(channel, data.videos.reduce((a, v) => a + v.play, 0));
+      medianPlay = median(data.videos.map((v) => v.play || 0));
+      summaryKey = "";
       table.setRows(data.videos);
       if ($("#period").value === "last") applyFilter();
     }
@@ -161,6 +233,7 @@ $("#btnScan").onclick = async () => {
 };
 $("#btnCopyAll").onclick = () => copyText(table.view.map(videoUrl).join("\n"), `Đã sao chép ${table.view.length} link`);
 $("#btnExport").onclick = () => (location.href = `/api/export/videos/${encodeURIComponent(username)}.xlsx`);
+$("#btnCsv").onclick = () => (location.href = `/api/export/videos/${encodeURIComponent(username)}.csv`);
 $("#btnColumns").onclick = (e) => {
   const r = e.currentTarget.getBoundingClientRect();
   table.showColumnMenu(r.left, r.bottom + 4);

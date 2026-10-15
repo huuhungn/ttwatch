@@ -1,6 +1,20 @@
 const tiktokUrl = (c) => `https://www.tiktok.com/@${c.unique_id || c.username}`;
 const videosUrl = (c) => `${location.origin}/videos?u=${encodeURIComponent(c.username)}`;
 let worker = {};
+let sparks = {}; // username -> [follow...] cho cột xu hướng
+const pendingDelete = new Set(); // kênh đã ẩn, đang chờ hết thời gian hoàn tác mới xóa thật
+let firstLoad = true;
+
+// Gợi ý cách xử lý cho các lỗi hay gặp; thông báo gốc vẫn hiện nguyên văn.
+function errorHint(msg) {
+  const m = (msg || "").toLowerCase();
+  if (m.includes("captcha")) return "TikTok yêu cầu xác minh. Bật \"Hiện cửa sổ trình duyệt\" trong Cài đặt, giải captcha một lần rồi quét lại.";
+  if (m.includes("không tồn tại")) return "Kênh không tồn tại hoặc bị khóa – kiểm tra lại username.";
+  if (m.includes("bị dừng")) return "Lần chạy trước bị tắt giữa chừng – hãy cập nhật lại.";
+  if (m.includes("timeout") || m.includes("net::") || m.includes("đã thử")) return "Lỗi mạng hoặc TikTok phản hồi chậm – thử lại sau.";
+  if (m.includes("hồ sơ trình duyệt")) return "Một cửa sổ trình duyệt khác đang giữ hồ sơ của tool – hãy tắt nó rồi thử lại.";
+  return "";
+}
 
 function statusBadge(c) {
   if (c.status === "running") {
@@ -9,7 +23,10 @@ function statusBadge(c) {
     return `<span class="badge run"><span class="spin"></span>Đang quét${w?.videos ? ` · ${nf.format(w.videos)} video` : "…"}</span>`;
   }
   if (c.status === "queued") return '<span class="badge">Đang chờ</span>';
-  if (c.status === "error") return `<span class="badge err" title="${esc(c.message)}">⚠ ${esc(c.message || "Lỗi")}</span>`;
+  if (c.status === "error") {
+    const hint = errorHint(c.message);
+    return `<span class="badge err" title="${esc(c.message + (hint ? "\n\n" + hint : ""))}">⚠ ${esc(c.message || "Lỗi")}</span>`;
+  }
   if (c.message) return `<span class="badge" title="${esc(c.message)}">ⓘ ${esc(c.message)}</span>`;
   return '<span class="badge ok">✓ Xong</span>';
 }
@@ -25,6 +42,11 @@ const columns = [
   },
   { key: "nickname", label: "Tên kênh", render: (r) => `<span class="wrap-cell" style="display:inline-block;vertical-align:bottom">${esc(r.nickname) || '<span class="muted">–</span>'}</span>${r.verified ? '<span class="tick" title="Tick xanh">✔</span>' : ""}` },
   { key: "followers", label: "Follow", align: "r", title: "Số người theo dõi (kèm mức tăng so với lần cập nhật trước)", render: (r) => fmtNum(r.followers) + fmtDelta(r.d_followers) },
+  {
+    key: "trend", label: "Xu hướng 30 ngày", title: "Biến động follow trong 30 ngày qua (sắp xếp theo mức tăng)",
+    get: (r) => { const v = sparks[r.username]; return v ? v[v.length - 1] - v[0] : null; },
+    render: (r) => Charts.spark(sparks[r.username]),
+  },
   { key: "d_followers", label: "+Follow", align: "r", hidden: true, title: "Tăng follow so với lần cập nhật trước", render: (r) => fmtDelta(r.d_followers) || '<span class="muted">–</span>' },
   { key: "likes", label: "Lượt thích", align: "r", title: "Tổng tim của kênh", render: (r) => fmtNum(r.likes) + fmtDelta(r.d_likes) },
   { key: "total_views", label: "Tổng view", align: "r", title: "Tổng view của các video đã quét", render: (r) => fmtNum(r.total_views) + fmtDelta(r.d_views) },
@@ -61,7 +83,10 @@ const table = new DataTable({
   onContextMenu: (e, sel) => showMenu(e.clientX, e.clientY, sel),
   onSelectionChange: updateStatusbar,
 });
-table.emptyText = "Chưa có kênh nào – dán link hoặc username vào ô phía trên rồi bấm <b>Thêm kênh</b>.";
+table.emptyText =
+  '<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">Chưa có kênh nào</div>' +
+  "Dán link hoặc username vào ô phía trên rồi bấm <b>Thêm kênh</b>, hoặc dùng <b>Nhập</b> để thêm từ file.<br>" +
+  '<span class="muted">Tool chỉ đọc trang công khai của TikTok. Bấm <kbd>?</kbd> để xem phím tắt.</span>';
 
 function showMenu(x, y, sel) {
   const n = sel.length;
@@ -71,6 +96,8 @@ function showMenu(x, y, sel) {
     { header: label },
     { icon: "↗", label: n === 1 ? "Mở kênh này" : `Mở ${n} kênh`, action: () => openUrls(sel.map(tiktokUrl)) },
     { icon: "▤", label: n === 1 ? "Mở danh sách video" : `Mở danh sách video (${n} tab)`, hint: "Enter", action: () => openUrls(sel.map(videosUrl)) },
+    { icon: "📈", label: "Biểu đồ và phân tích", hint: "Space", action: () => openDrawer(sel[0]) },
+    { icon: "⇄", label: "So sánh các kênh đã chọn", disabled: n < 2 || n > 6, action: () => openCompare(sel) },
     "-",
     { icon: "↻", label: "Cập nhật nhanh", hint: "F5", action: () => refresh(sel, QUICK) },
     { icon: "⟳", label: "Quét video theo số lượng / ngày…", action: () => scanChannels(sel) },
@@ -96,15 +123,32 @@ async function load() {
     const data = await api("/api/channels");
     worker = data.worker;
     renderWorker();
-    const json = JSON.stringify(data);
+    renderInterrupted(data.interrupted || 0);
+    const rows = data.channels.filter((c) => !pendingDelete.has(c.username));
+    const json = JSON.stringify([rows, [...pendingDelete]]);
     if (json !== lastJson) {
       lastJson = json;
-      table.setRows(data.channels);
-      updateGroups(data.channels);
+      window.channelRows = rows;
+      table.setRows(rows);
+      updateGroups(rows);
     }
+    firstLoad = false;
   } catch (e) {
     $("#worker").innerHTML = '<span style="color:var(--down)">⚠ Tool đã tắt – hãy mở lại file TheoDoiKenhTiktok.exe</span>';
   }
+}
+
+function renderInterrupted(n) {
+  const b = $("#bannerInterrupted");
+  b.hidden = !n;
+  if (n) $("#bannerText").textContent = `${n} kênh bị dừng giữa chừng ở lần chạy trước (tool bị tắt khi đang quét).`;
+}
+
+async function loadSparks() {
+  try {
+    sparks = await api("/api/sparklines?days=30");
+    table.render();
+  } catch {}
 }
 
 function renderWorker() {
@@ -222,13 +266,40 @@ async function scanChannels(sel) {
   if (job) refresh(sel, job);
 }
 
-async function removeChannels(sel) {
-  const msg = sel.length === 1 ? `Xóa kênh @${sel[0].unique_id || sel[0].username} và toàn bộ dữ liệu video?` : `Xóa ${sel.length} kênh đã chọn và toàn bộ dữ liệu video?`;
-  if (!confirm(msg)) return;
-  await api("/api/channels/delete", { usernames: sel.map((c) => c.username) });
+// Ẩn ngay, chỉ xóa thật sau UNDO_MS để còn hoàn tác được (xóa kênh kéo theo toàn bộ video và lịch sử).
+const UNDO_MS = window.UNDO_MS || 8000;
+function removeChannels(sel) {
+  const names = sel.map((c) => c.username);
+  names.forEach((n) => pendingDelete.add(n));
   table.clearSelection();
-  toast(`Đã xóa ${sel.length} kênh`);
+  lastJson = "";
   load();
+  let undone = false;
+  const label = names.length === 1 ? `@${sel[0].unique_id || sel[0].username}` : `${names.length} kênh`;
+  toast(`Đã xóa ${label} cùng toàn bộ video`, "", {
+    ms: UNDO_MS,
+    action: {
+      label: "Hoàn tác",
+      fn: () => {
+        undone = true;
+        names.forEach((n) => pendingDelete.delete(n));
+        lastJson = "";
+        load();
+      },
+    },
+  });
+  setTimeout(async () => {
+    if (undone) return;
+    try {
+      await api("/api/channels/delete", { usernames: names });
+    } catch (e) {
+      toast("Không xóa được: " + e.message, "err");
+    } finally {
+      names.forEach((n) => pendingDelete.delete(n));
+      lastJson = "";
+      load();
+    }
+  }, UNDO_MS + 200);
 }
 
 function prompt2(title, value, hint) {
@@ -287,16 +358,46 @@ bindTableKeys(table, {
   Delete: removeChannels,
   F5: (sel) => refresh(sel, QUICK),
   copy: (sel) => copyText(sel.map((c) => c.unique_id || c.username).join("\n")),
+  " ": (sel) => openDrawer(sel[0]),
 });
 
 // ---------------------------------------------------------------- cài đặt
+
+const hourOptions = '<option value="">Tắt</option>' + Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, "0")}:00</option>`).join("");
+$("#setQuietStart").innerHTML = hourOptions;
+$("#setQuietEnd").innerHTML = hourOptions;
+
+function applyLook() {
+  const theme = localStorage.getItem("theme") || "auto";
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  document.body.classList.toggle("dense", localStorage.getItem("dense") === "1");
+}
+applyLook();
 
 $("#btnSettings").onclick = async () => {
   const s = await api("/api/settings");
   $("#setShowBrowser").checked = s.show_browser === "1";
   $("#setAuto").value = s.auto_refresh_minutes;
+  $("#setAutoMode").value = s.auto_refresh_mode || "quick";
+  $("#setQuietStart").value = s.quiet_start ?? "";
+  $("#setQuietEnd").value = s.quiet_end ?? "";
+  $("#setAlerts").checked = s.alerts_enabled !== "0";
+  $("#setAlertPct").value = s.alert_follow_pct ?? "5";
+  $("#setAlertVideo").checked = s.alert_new_video !== "0";
+  $("#setTheme").value = localStorage.getItem("theme") || "auto";
+  $("#setDense").checked = localStorage.getItem("dense") === "1";
+  api("/api/backups").then((b) => {
+    const n = b.backups.length;
+    $("#backupInfo").textContent = n
+      ? `Đã có ${n} bản sao lưu tự động, gần nhất ${new Date(b.backups[0].mtime * 1000).toLocaleString("vi-VN")}. Tool sao lưu mỗi ngày và trước khi nâng cấp cấu trúc dữ liệu (giữ 7 bản).`
+      : "Tool tự sao lưu mỗi ngày và trước khi nâng cấp cấu trúc dữ liệu (giữ 7 bản).";
+  }).catch(() => {});
   $("#dlgSettings").showModal();
 };
+$("#btnBackup").onclick = () => (location.href = "/api/export/backup");
+$("#btnAbout").onclick = () => $("#dlgAbout").showModal();
+$("#aboutClose").onclick = () => $("#dlgAbout").close();
 $("#setCancel").onclick = () => $("#dlgSettings").close();
 $("#btnShutdown").onclick = async () => {
   if (!confirm("Tắt tool? Việc quét đang chạy sẽ dừng. Mở lại bằng file TheoDoiKenhTiktok.exe.")) return;
@@ -305,14 +406,25 @@ $("#btnShutdown").onclick = async () => {
   toast("Đã tắt tool");
 };
 $("#setSave").onclick = async () => {
+  localStorage.setItem("theme", $("#setTheme").value);
+  localStorage.setItem("dense", $("#setDense").checked ? "1" : "0");
+  applyLook();
   await api("/api/settings", {
     show_browser: $("#setShowBrowser").checked ? "1" : "0",
     auto_refresh_minutes: Math.max(0, parseInt($("#setAuto").value) || 0),
+    auto_refresh_mode: $("#setAutoMode").value,
+    quiet_start: $("#setQuietStart").value,
+    quiet_end: $("#setQuietEnd").value,
+    alerts_enabled: $("#setAlerts").checked ? "1" : "0",
+    alert_follow_pct: String(Math.max(0, parseFloat($("#setAlertPct").value) || 0)),
+    alert_new_video: $("#setAlertVideo").checked ? "1" : "0",
   });
   $("#dlgSettings").close();
   toast("Đã lưu cài đặt");
 };
 
 load();
+loadSparks();
 setInterval(load, 2000);
+setInterval(loadSparks, 60000);
 setInterval(() => table.render(), 60000); // làm mới "x phút trước"

@@ -159,6 +159,11 @@ def channel_insights(username: str):
     return insights.channel_insights(username)
 
 
+@app.get("/api/sparklines")
+def sparklines(days: int = 30):
+    return insights.sparklines(max(1, min(days, 365)))
+
+
 @app.get("/api/overview")
 def overview():
     return insights.overview()

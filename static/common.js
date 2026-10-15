@@ -70,19 +70,35 @@ async function copyText(text, label = "Đã sao chép") {
   toast(label);
 }
 
-function toast(msg, type = "") {
+/** opt: { ms, action: { label, fn } } – action hiện thành nút trong thông báo (ví dụ Hoàn tác). */
+function toast(msg, type = "", opt = {}) {
   let box = $("#toasts");
   if (!box) {
     box = document.createElement("div");
     box.id = "toasts";
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
     document.body.appendChild(box);
   }
+  while (box.children.length >= 4) box.firstElementChild.remove();
   const t = document.createElement("div");
   t.className = "toast " + type;
   t.textContent = msg;
+  if (opt.action) {
+    const b = document.createElement("button");
+    b.className = "act";
+    b.textContent = opt.action.label;
+    b.onclick = () => {
+      opt.action.fn();
+      t.remove();
+    };
+    t.appendChild(b);
+  }
   box.appendChild(t);
-  setTimeout(() => t.classList.add("hide"), 3200);
-  setTimeout(() => t.remove(), 3600);
+  const ms = opt.ms || 3200;
+  setTimeout(() => t.classList.add("hide"), ms);
+  setTimeout(() => t.remove(), ms + 400);
+  return t;
 }
 
 // ---------------------------------------------------------------- menu chuột phải
