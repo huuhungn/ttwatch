@@ -6,6 +6,7 @@ chế độ "ẩn" chỉ là đẩy cửa sổ ra ngoài màn hình.
 import json
 import queue
 import re
+import sys
 import threading
 import time
 import traceback
@@ -49,6 +50,13 @@ class ProfileBusyError(RuntimeError):
 def _first_line(exc):
     lines = str(exc).strip().splitlines()
     return lines[0] if lines else type(exc).__name__
+
+
+def _notify_tray(alerts):
+    """Hiện cảnh báo ở khay nếu khay đang chạy (không tự import tray để khỏi kéo pystray vào)."""
+    tray = sys.modules.get("tray")
+    if alerts and tray is not None:
+        tray.notify("\n".join(a["text"] for a in alerts[:3]), "Cảnh báo kênh TikTok")
 
 
 def _is_transient(exc):
@@ -213,7 +221,7 @@ class Scraper:
                 if ch and ch["status"] == "done":
                     db.record_scan(key, describe_job(job))
                     try:
-                        insights.check_alerts(key)
+                        _notify_tray(insights.check_alerts(key))
                     except Exception:
                         traceback.print_exc()  # cảnh báo hỏng không được làm hỏng lần quét
                 return

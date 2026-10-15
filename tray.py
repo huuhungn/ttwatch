@@ -10,6 +10,19 @@ from paths import APP_NAME, DATA_DIR, STATIC_DIR
 GROUP_URL = "https://www.facebook.com/groups/815190970340230"
 AUTHOR_URL = "https://www.facebook.com/duckuongg/"
 
+_icon = None
+
+
+def notify(message, title=APP_NAME):
+    """Bóng thông báo từ khay (cảnh báo kênh). Im lặng nếu chưa có khay: chạy NO_TRAY, kiểm thử."""
+    icon = _icon
+    if icon is None:
+        return
+    try:
+        icon.notify(message[:250], title)
+    except Exception:
+        pass
+
 
 def run_tray(url, on_quit, first_run_notice=True):
     """Chạy biểu tượng khay (chặn luồng chính cho đến khi người dùng chọn Tắt tool)."""
@@ -29,6 +42,8 @@ def run_tray(url, on_quit, first_run_notice=True):
         pystray.MenuItem("Tắt tool", quit_),
     )
     icon = pystray.Icon("theo_doi_kenh_tiktok", Image.open(STATIC_DIR / "logo.png"), APP_NAME, menu)
+    global _icon
+    _icon = icon
 
     def setup(icon):
         icon.visible = True

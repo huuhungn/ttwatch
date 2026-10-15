@@ -252,6 +252,24 @@ class AlertsTest(unittest.TestCase):
         db.set_settings({"alerts_enabled": "0"})
         self.assertEqual(insights.check_alerts("demo"), [])
 
+    def test_tray_notification_only_when_tray_is_running(self):
+        import sys
+        import types
+
+        import scraper
+
+        sent = []
+        scraper._notify_tray([{"kind": "followers", "text": "x"}])  # chưa có khay: không lỗi
+        fake = types.ModuleType("tray")
+        fake.notify = lambda msg, title=None: sent.append((msg, title))
+        sys.modules["tray"] = fake
+        try:
+            scraper._notify_tray([])
+            scraper._notify_tray([{"kind": "a", "text": "một"}, {"kind": "b", "text": "hai"}])
+        finally:
+            del sys.modules["tray"]
+        self.assertEqual(sent, [("một\nhai", "Cảnh báo kênh TikTok")])
+
     def test_table_is_capped(self):
         import insights
 
