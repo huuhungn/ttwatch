@@ -10,7 +10,7 @@ Giao diện trong `static/` lấy nguyên từ gói gốc. Phần Python viết 
 
 ```bash
 uv venv --python 3.13 .venv
-.venv/Scripts/python -m pip install -r requirements.txt
+uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 .venv/Scripts/python -m playwright install chromium
 .venv/Scripts/python app.py
 ```
@@ -18,3 +18,12 @@ uv venv --python 3.13 .venv
 Trang mở tại `http://127.0.0.1:<cổng>/`. Dữ liệu nằm ở `TheoDoiKenhTiktok_data` cạnh file chạy, hoặc thư mục trỏ bởi `TDK_DATA_DIR`.
 
 Tool chỉ đọc trang TikTok công khai bằng trình duyệt của máy bạn. Không gửi dữ liệu đi đâu khác. Kênh riêng tư và captcha vẫn chặn như bản gốc.
+
+## Kiểm thử
+
+```bash
+uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
+TDK_DATA_DIR=$(mktemp -d) .venv/Scripts/python -m pytest -q
+```
+
+Cần đặt `TDK_DATA_DIR` sang thư mục trống: app từ chối chạy khi hai bản dùng chung một thư mục dữ liệu.
