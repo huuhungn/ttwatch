@@ -11,6 +11,9 @@
 - Trang video: thẻ tóm tắt, phân tích, đánh dấu video vượt trội, xuất CSV.
 - Hoàn tác khi xóa kênh; banner khi có kênh bị dừng giữa chừng; gợi ý cách xử lý cho lỗi hay gặp.
 - Giao diện sáng/tối chọn tay, bảng gọn, focus rõ, tôn trọng giảm chuyển động.
+- GitHub Actions: `ci.yml` (ruff, cú pháp JS, toàn bộ test kể cả giao diện, trên Windows) và `release.yml` (build exe, chạy thử exe, nén zip + SHA256, tạo Release khi đẩy tag `v*`).
+- Chip nhóm (chuột phải để đổi tên/bỏ nhóm), cột #/username dính trái, mũi tên chọn dòng, tab điều hướng bằng phím, so sánh theo % thay đổi.
+- Màu chữ đạt WCAG AA ở cả hai giao diện (đo bằng test chạy trong trình duyệt).
 - Tài liệu: `docs/user-guide.md`, `docs/big-update-plan.md`, `docs/overnight-log.md`.
 
 ### Đổi
@@ -23,4 +26,4 @@
 - Toàn bộ các lệch hành vi so với bản gốc đã báo ở `docs/scraper-diff.md` (dựng lại từ bytecode).
 
 ### Kiểm thử
-- Từ 24 lên 92 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.
+- Từ 24 lên 97 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.
