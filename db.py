@@ -3,7 +3,6 @@ import threading
 import time
 
 from paths import DB_PATH
-
 _lock = threading.RLock()
 
 SCHEMA = """
@@ -64,40 +63,186 @@ CREATE INDEX IF NOT EXISTS idx_videos_user ON videos(username);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 """
 
-DEFAULT_SETTINGS = {
-    "show_browser": "0",
-    "auto_refresh_minutes": "0",
-}
 
-
-def _conn() -> sqlite3.Connection:
-    DATA = DB_PATH.parent
-    DATA.mkdir(parents=True, exist_ok=True)
+def _conn():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH, timeout=30)
     c.row_factory = sqlite3.Row
     return c
 
 
-def init() -> None:
-    with _lock:
-        c = _conn()
-        try:
-            c.executescript(SCHEMA)
-            _add_missing_columns(c)
-            c.execute("PRAGMA journal_mode=WAL")
-            for key, value in DEFAULT_SETTINGS.items():
-                c.execute(
-                    "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
-                    (key, value),
-                )
-            c.execute(
-                "UPDATE channels SET status='error', "
-                "message='Bị dừng giữa chừng – hãy cập nhật lại' "
-                "WHERE status IN ('queued','running')"
-            )
-            c.commit()
-        finally:
-            c.close()
+def init():
+    with _lock, _conn() as c:
+        c.executescript(SCHEMA)
+        _add_missing_columns(c)
+        c.execute("PRAGMA journal_mode=WAL")
+        # Lần chạy trước bị tắt giữa chừng: kênh đang xếp hàng/đang quét không còn job nào thật.
+        c.execute("UPDATE channels SET status='error', message='Bị dừng giữa chừng – hãy cập nhật lại' WHERE status IN ('queued','running')")
+
+
+# show_browser: "1" = hiện cửa sổ trình duyệt để giải captcha.
+# auto_refresh_minutes: "0" = tắt; N > 0 = tự cập nhật nhanh mọi kênh sau mỗi N phút.
+
+DEFAULT_SETTINGS = {"show_browser": "0", "auto_refresh_minutes": "0"}
+
+
+def get_setting(key, default=None):
+    with _lock, _conn() as c:
+        row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else DEFAULT_SETTINGS.get(key, default)
+
+
+def get_settings():
+    with _lock, _conn() as c:
+        rows = {r["key"]: r["value"] for r in c.execute("SELECT key, value FROM settings")}
+    return {**DEFAULT_SETTINGS, **rows}
+
+
+def set_settings(values):
+    with _lock, _conn() as c:
+        for k, v in values.items():
+            if k in DEFAULT_SETTINGS:
+                c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)", (k, str(v)))
+
+
+
+
+def add_channels(usernames):
+    """Trả về (đã thêm, đã có sẵn)."""
+    added, existed = [], []
+    now = int(time.time())
+    with _lock, _conn() as c:
+        for u in usernames:
+            key = u.lower()
+            if c.execute("SELECT 1 FROM channels WHERE username=?", (key,)).fetchone():
+                existed.append(u)
+            else:
+                c.execute("INSERT INTO channels(username, unique_id, added_at, status) VALUES(?,?,?, 'queued')",
+                          (key, u, now))
+                added.append(u)
+    return added, existed
+
+
+def channel_exists(key):
+    with _lock, _conn() as c:
+        return c.execute("SELECT 1 FROM channels WHERE username=?", (key,)).fetchone() is not None
+
+
+def all_usernames():
+    with _lock, _conn() as c:
+        return [r["username"] for r in c.execute("SELECT username FROM channels")]
+
+
+def delete_channels(usernames):
+    keys = [u.lower() for u in usernames]
+    with _lock, _conn() as c:
+        for k in keys:
+            c.execute("DELETE FROM channels WHERE username=?", (k,))
+            c.execute("DELETE FROM videos WHERE username=?", (k,))
+            c.execute("DELETE FROM snapshots WHERE username=?", (k,))
+
+
+def update_meta(usernames, group_name=None, note=None):
+    with _lock, _conn() as c:
+        for u in usernames:
+            if group_name is not None:
+                c.execute("UPDATE channels SET group_name=? WHERE username=?", (group_name, u.lower()))
+            if note is not None:
+                c.execute("UPDATE channels SET note=? WHERE username=?", (note, u.lower()))
+
+
+def set_status(key, status, message=""):
+    with _lock, _conn() as c:
+        c.execute("UPDATE channels SET status=?, message=? WHERE username=?", (status, message, key))
+
+
+def save_channel_info(key, info):
+    cols = ", ".join(f"{k}=?" for k in info)
+    with _lock, _conn() as c:
+        c.execute(f"UPDATE channels SET {cols}, updated_at=? WHERE username=?",
+                  (*info.values(), int(time.time()), key))
+
+
+def finish_scan(key, videos, full):
+    now = int(time.time())
+    with _lock, _conn() as c:
+        for v in videos:
+            old = c.execute("SELECT play, updated_at FROM videos WHERE id=?", (v["id"],)).fetchone()
+            if old:
+                c.execute("""UPDATE videos SET description=?, duration=?, cover=?, play=?, digg=?, comment=?,
+                             share=?, collect=?, music=?, is_ad=?, prev_play=?, prev_ts=?, updated_at=? WHERE id=?""",
+                          (v["description"], v["duration"], v["cover"], v["play"], v["digg"], v["comment"],
+                           v["share"], v["collect"], v["music"], v["is_ad"], old["play"], old["updated_at"], now, v["id"]))
+            else:
+                c.execute("""INSERT INTO videos(id, username, description, create_time, duration, cover, play, digg,
+                             comment, share, collect, music, is_ad, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (v["id"], key, v["description"], v["create_time"], v["duration"], v["cover"], v["play"],
+                           v["digg"], v["comment"], v["share"], v["collect"], v["music"], v["is_ad"], now))
+        if full:
+            # Quét toàn bộ: video không còn trong danh sách TikTok trả về thì xóa khỏi DB.
+            ids = [v["id"] for v in videos]
+            if ids:
+                c.execute(f"DELETE FROM videos WHERE username=? AND id NOT IN ({','.join('?' * len(ids))})", (key, *ids))
+            c.execute("UPDATE channels SET full_scan_at=? WHERE username=?", (now, key))
+        ch = c.execute("SELECT followers, likes, video_count FROM channels WHERE username=?", (key,)).fetchone()
+        total = c.execute("SELECT COALESCE(SUM(play),0) t FROM videos WHERE username=?", (key,)).fetchone()["t"]
+        if ch:
+            c.execute("INSERT INTO snapshots(username, ts, followers, likes, video_count, total_views) VALUES(?,?,?,?,?,?)",
+                      (key, now, ch["followers"], ch["likes"], ch["video_count"], total))
+
+
+def list_channels():
+    now = int(time.time())
+    d7, d30 = now - 604800, now - 2592000
+    with _lock, _conn() as c:
+        rows = [dict(r) for r in c.execute("SELECT * FROM channels ORDER BY added_at, rowid")]
+        agg = {r["username"]: dict(r) for r in c.execute(f"""
+            SELECT username, COUNT(*) scanned, SUM(play) total_views, SUM(digg) v_likes, SUM(comment) v_comments,
+                   SUM(share) v_shares, SUM(collect) v_saves, MAX(play) top_views, MAX(create_time) last_post,
+                   SUM(CASE WHEN create_time >= {d7} THEN 1 ELSE 0 END) posts_7d,
+                   SUM(CASE WHEN create_time >= {d30} THEN 1 ELSE 0 END) posts_30d,
+                   SUM(CASE WHEN create_time >= {d30} THEN play ELSE 0 END) views_30d
+            FROM videos GROUP BY username""")}
+        snaps = {}
+        for r in c.execute("""SELECT username, ts, followers, likes, total_views FROM snapshots s
+                              WHERE id IN (SELECT id FROM snapshots s2 WHERE s2.username = s.username
+                                           ORDER BY ts DESC, id DESC LIMIT 2)
+                              ORDER BY username, ts DESC, id DESC"""):
+            snaps.setdefault(r["username"], []).append(dict(r))
+    for ch in rows:
+        a = agg.get(ch["username"], {})
+        ch["scanned"] = a.get("scanned") or 0
+        ch["total_views"] = a.get("total_views") if a else None
+        ch["top_views"] = a.get("top_views")
+        ch["last_post"] = a.get("last_post")
+        ch["posts_7d"] = a.get("posts_7d")
+        ch["posts_30d"] = a.get("posts_30d")
+        ch["views_30d"] = a.get("views_30d")
+        ch["avg_views"] = round(a["total_views"] / a["scanned"]) if a.get("scanned") else None
+        inter = sum(a.get(k) or 0 for k in ("v_likes", "v_comments", "v_shares", "v_saves"))
+        ch["er"] = round(inter / a["total_views"] * 100, 2) if a.get("total_views") else None
+        s = snaps.get(ch["username"], [])
+        if len(s) >= 2:
+            cur, prev = s[0], s[1]
+            ch["d_followers"] = (cur["followers"] or 0) - (prev["followers"] or 0)
+            ch["d_likes"] = (cur["likes"] or 0) - (prev["likes"] or 0)
+            ch["d_views"] = (cur["total_views"] or 0) - (prev["total_views"] or 0)
+            ch["prev_ts"] = prev["ts"]
+        else:
+            ch["d_followers"] = ch["d_likes"] = ch["d_views"] = ch["prev_ts"] = None
+    return rows
+
+
+def get_channel(key):
+    with _lock, _conn() as c:
+        r = c.execute("SELECT * FROM channels WHERE username=?", (key.lower(),)).fetchone()
+    return dict(r) if r else None
+
+
+def list_videos(key):
+    with _lock, _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM videos WHERE username=? ORDER BY create_time DESC", (key.lower(),))]
 
 
 # Cột thêm sau bản gốc: DB cũ được bổ sung khi mở app, không đổi dữ liệu sẵn có.
@@ -109,7 +254,7 @@ ADDED_COLUMNS = {
 }
 
 
-def _add_missing_columns(c) -> None:
+def _add_missing_columns(c):
     for table, columns in ADDED_COLUMNS.items():
         have = {row["name"] for row in c.execute(f"PRAGMA table_info({table})")}
         for name, decl in columns.items():
@@ -117,330 +262,10 @@ def _add_missing_columns(c) -> None:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
-def record_scan(username: str, label: str) -> None:
+def record_scan(key, label):
     """Ghi lần quét thành công gần nhất và kiểu quét, để trang videos hiển thị."""
-    with _lock:
-        c = _conn()
-        try:
-            c.execute(
-                "UPDATE channels SET last_scan_at=?, last_scan_label=? WHERE username=?",
-                (int(time.time()), label, username),
-            )
-            c.commit()
-        finally:
-            c.close()
-
-
-def get_setting(key: str, default: str | None = None):
-    with _lock:
-        c = _conn()
-        try:
-            row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-            return row["value"] if row else default
-        finally:
-            c.close()
-
-
-def get_settings() -> dict:
-    with _lock:
-        c = _conn()
-        try:
-            rows = c.execute("SELECT key, value FROM settings").fetchall()
-            out = dict(DEFAULT_SETTINGS)
-            out.update({row["key"]: row["value"] for row in rows})
-            return out
-        finally:
-            c.close()
-
-
-def set_settings(values: dict) -> None:
-    with _lock:
-        c = _conn()
-        try:
-            for key, value in values.items():
-                c.execute(
-                    "INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
-                    (key, str(value)),
-                )
-            c.commit()
-        finally:
-            c.close()
-
-
-def add_channels(usernames: list[str]) -> tuple[list[str], list[str]]:
-    """Trả về (đã thêm, đã có sẵn)."""
-    added: list[str] = []
-    existed: list[str] = []
-    now = int(time.time())
-    with _lock:
-        c = _conn()
-        try:
-            for username in usernames:
-                row = c.execute(
-                    "SELECT 1 FROM channels WHERE username=?", (username,)
-                ).fetchone()
-                if row:
-                    existed.append(username)
-                    continue
-                c.execute(
-                    "INSERT INTO channels(username, unique_id, added_at, status) "
-                    "VALUES(?,?,?, 'queued')",
-                    (username, username, now),
-                )
-                added.append(username)
-            c.commit()
-        finally:
-            c.close()
-    return added, existed
-
-
-def channel_exists(username: str) -> bool:
-    with _lock:
-        c = _conn()
-        try:
-            return (
-                c.execute(
-                    "SELECT 1 FROM channels WHERE username=?", (username,)
-                ).fetchone()
-                is not None
-            )
-        finally:
-            c.close()
-
-
-def all_usernames() -> list[str]:
-    with _lock:
-        c = _conn()
-        try:
-            return [
-                row["username"]
-                for row in c.execute("SELECT username FROM channels").fetchall()
-            ]
-        finally:
-            c.close()
-
-
-def delete_channels(usernames: list[str]) -> int:
-    n = 0
-    with _lock:
-        c = _conn()
-        try:
-            for username in usernames:
-                c.execute("DELETE FROM channels WHERE username=?", (username,))
-                c.execute("DELETE FROM videos WHERE username=?", (username,))
-                c.execute("DELETE FROM snapshots WHERE username=?", (username,))
-                n += 1
-            c.commit()
-        finally:
-            c.close()
-    return n
-
-
-def update_meta(usernames: list[str], group_name=None, note=None) -> None:
-    with _lock:
-        c = _conn()
-        try:
-            for username in usernames:
-                if group_name is not None:
-                    c.execute(
-                        "UPDATE channels SET group_name=? WHERE username=?",
-                        (group_name, username),
-                    )
-                if note is not None:
-                    c.execute(
-                        "UPDATE channels SET note=? WHERE username=?",
-                        (note, username),
-                    )
-            c.commit()
-        finally:
-            c.close()
-
-
-def set_status(username: str, status: str, message: str = "") -> None:
-    with _lock:
-        c = _conn()
-        try:
-            c.execute(
-                "UPDATE channels SET status=?, message=? WHERE username=?",
-                (status, message, username),
-            )
-            c.commit()
-        finally:
-            c.close()
-
-
-def save_channel_info(username: str, info: dict) -> None:
-    cols = ", ".join(f"{key}=?" for key in info)
-    sql = f"UPDATE channels SET {cols}, updated_at=? WHERE username=?"
-    with _lock:
-        c = _conn()
-        try:
-            c.execute(sql, [*info.values(), int(time.time()), username])
-            c.commit()
-        finally:
-            c.close()
-
-
-def finish_scan(username: str, videos: list[dict], full: bool) -> dict:
-    now = int(time.time())
-    new_count = updated = 0
-    total_views = 0
-    with _lock:
-        c = _conn()
-        try:
-            for video in videos:
-                total_views += int(video.get("play") or 0)
-                prev = c.execute(
-                    "SELECT play, updated_at FROM videos WHERE id=?",
-                    (video["id"],),
-                ).fetchone()
-                if prev is None:
-                    c.execute(
-                        "INSERT INTO videos(id, username, description, create_time, duration, "
-                        "cover, play, digg, comment, share, collect, music, is_ad, "
-                        "prev_play, prev_ts, updated_at) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            video["id"],
-                            username,
-                            video.get("description"),
-                            video.get("create_time"),
-                            video.get("duration"),
-                            video.get("cover"),
-                            video.get("play"),
-                            video.get("digg"),
-                            video.get("comment"),
-                            video.get("share"),
-                            video.get("collect"),
-                            video.get("music"),
-                            video.get("is_ad") or 0,
-                            None,
-                            None,
-                            now,
-                        ),
-                    )
-                    new_count += 1
-                else:
-                    c.execute(
-                        "UPDATE videos SET description=?, duration=?, cover=?, play=?, digg=?, comment=?,\n"
-                        "                             share=?, collect=?, music=?, is_ad=?, prev_play=?, prev_ts=?, updated_at=? WHERE id=?",
-                        (
-                            video.get("description"),
-                            video.get("duration"),
-                            video.get("cover"),
-                            video.get("play"),
-                            video.get("digg"),
-                            video.get("comment"),
-                            video.get("share"),
-                            video.get("collect"),
-                            video.get("music"),
-                            video.get("is_ad") or 0,
-                            prev["play"],
-                            prev["updated_at"],
-                            now,
-                            video["id"],
-                        ),
-                    )
-                    updated += 1
-            ch = c.execute(
-                "SELECT followers, likes, video_count FROM channels WHERE username=?",
-                (username,),
-            ).fetchone()
-            if ch:
-                c.execute(
-                    "INSERT INTO snapshots(username, ts, followers, likes, video_count, total_views) "
-                    "VALUES(?,?,?,?,?,?)",
-                    (
-                        username,
-                        now,
-                        ch["followers"],
-                        ch["likes"],
-                        ch["video_count"],
-                        total_views,
-                    ),
-                )
-            if full:
-                c.execute(
-                    "UPDATE channels SET full_scan_at=?, status='done', message='' WHERE username=?",
-                    (now, username),
-                )
-            else:
-                c.execute(
-                    "UPDATE channels SET status='done', message='' WHERE username=?",
-                    (username,),
-                )
-            c.commit()
-        finally:
-            c.close()
-    return {"new": new_count, "updated": updated, "total_views": total_views}
-
-
-def list_channels() -> list[dict]:
-    now = int(time.time())
-    day = 86400
-    with _lock:
-        c = _conn()
-        try:
-            rows = c.execute("SELECT * FROM channels ORDER BY added_at DESC").fetchall()
-            out = []
-            for row in rows:
-                item = dict(row)
-                username = item["username"]
-                videos = c.execute(
-                    "SELECT play, digg, comment, share, create_time FROM videos WHERE username=?",
-                    (username,),
-                ).fetchall()
-                plays = [int(v["play"] or 0) for v in videos]
-                item["scanned"] = len(videos)
-                item["total_views"] = sum(plays)
-                item["avg_views"] = int(sum(plays) / len(plays)) if plays else 0
-                item["top_views"] = max(plays) if plays else 0
-                recent = [v for v in videos if v["create_time"] and now - int(v["create_time"]) <= 30 * day]
-                week = [v for v in recent if now - int(v["create_time"]) <= 7 * day]
-                item["posts_7d"] = len(week)
-                item["posts_30d"] = len(recent)
-                item["views_30d"] = sum(int(v["play"] or 0) for v in recent)
-                times = [int(v["create_time"]) for v in videos if v["create_time"]]
-                item["last_post"] = max(times) if times else None
-                engagement = sum(int(v["digg"] or 0) + int(v["comment"] or 0) + int(v["share"] or 0) for v in videos)
-                item["er"] = (engagement / item["total_views"]) if item["total_views"] else 0
-                snaps = c.execute(
-                    "SELECT followers, likes, total_views FROM snapshots WHERE username=? "
-                    "ORDER BY ts DESC LIMIT 2",
-                    (username,),
-                ).fetchall()
-                if len(snaps) >= 2:
-                    item["d_followers"] = (snaps[0]["followers"] or 0) - (snaps[1]["followers"] or 0)
-                    item["d_likes"] = (snaps[0]["likes"] or 0) - (snaps[1]["likes"] or 0)
-                    item["d_views"] = (snaps[0]["total_views"] or 0) - (snaps[1]["total_views"] or 0)
-                else:
-                    item["d_followers"] = item["d_likes"] = item["d_views"] = None
-                out.append(item)
-            return out
-        finally:
-            c.close()
-
-
-def get_channel(username: str):
-    with _lock:
-        c = _conn()
-        try:
-            row = c.execute(
-                "SELECT * FROM channels WHERE username=?", (username,)
-            ).fetchone()
-            return dict(row) if row else None
-        finally:
-            c.close()
-
-
-def list_videos(username: str) -> list[dict]:
-    with _lock:
-        c = _conn()
-        try:
-            rows = c.execute(
-                "SELECT * FROM videos WHERE username=? ORDER BY create_time DESC",
-                (username,),
-            ).fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            c.close()
+    with _lock, _conn() as c:
+        c.execute(
+            "UPDATE channels SET last_scan_at=?, last_scan_label=? WHERE username=?",
+            (int(time.time()), label, key),
+        )

@@ -8,3 +8,6 @@ __pycache__/
 TheoDoiKenhTiktok_data/
 browser_data/
 .playwright/
+app.lock
+app.pid
+log.txt

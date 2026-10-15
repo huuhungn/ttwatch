@@ -20,36 +20,26 @@ from pydantic import BaseModel
 
 import db
 import instance_lock
-from paths import APP_NAME, DATA_DIR, FROZEN, STATIC_DIR
+from paths import APP_NAME, DATA_DIR, STATIC_DIR as STATIC
 from scraper import Scraper, parse_input
 
-
-def _refuse_second_instance(message: str) -> None:
-    print(message, file=sys.stderr)
-    if FROZEN and sys.platform == "win32":
-        import ctypes
-
-        ctypes.windll.user32.MessageBoxW(None, message, APP_NAME, 0x30)
-    raise SystemExit(1)
-
-
-# Khóa trước khi mở DB và trình duyệt: hai app cùng thư mục dữ liệu sẽ tranh nhau
-# profile trình duyệt và ghi đè trạng thái kênh của nhau.
-try:
-    _instance = instance_lock.acquire(DATA_DIR)
-except instance_lock.AlreadyRunning as exc:
-    _refuse_second_instance(str(exc))
-
-db.init()
-
 HOST = "127.0.0.1"
+PORT = 8765
+APP_ID = "theo-doi-kenh-tiktok"
+_instance = None
+
+scraper: Scraper = None
 app = FastAPI(title=APP_NAME)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-scraper = Scraper()
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.get("/api/ping")
+def ping():
+    return {"app": APP_ID}
 
 
 class AddReq(BaseModel):
-    text: str = ""
+    text: str
     scan: dict | None = None
 
 
@@ -57,9 +47,9 @@ class UsersReq(BaseModel):
     usernames: list[str]
 
 
-class RefreshReq(BaseModel):
-    usernames: list[str] = []
-    job: dict | None = None
+class ScanReq(BaseModel):
+    usernames: list[str]
+    job: dict
 
 
 class MetaReq(BaseModel):
@@ -69,41 +59,24 @@ class MetaReq(BaseModel):
 
 
 class OpenReq(BaseModel):
-    urls: list[str] = []
-
-
-class SettingsReq(BaseModel):
-    show_browser: str | None = None
-    auto_refresh_minutes: int | str | None = None
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind((HOST, 0))
-        return sock.getsockname()[1]
-
-
-@app.get("/api/ping")
-def ping():
-    return {"ok": True, "name": APP_NAME}
+    urls: list[str]
 
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC / "index.html")
 
 
 @app.get("/videos")
 def videos_page():
-    return FileResponse(STATIC_DIR / "videos.html")
+    return FileResponse(STATIC / "videos.html")
 
 
 @app.post("/api/channels")
-def add_channels(req: AddReq):
-    usernames, invalid = parse_input(req.text)
+async def add_channels(req: AddReq):
+    usernames, invalid = await asyncio.to_thread(parse_input, req.text)
     added, existed = db.add_channels(usernames)
-    job = req.scan or {"mode": "quick"}
-    scraper.enqueue(added, job)
+    scraper.enqueue(added, req.scan)
     return {"added": added, "existed": existed, "invalid": invalid}
 
 
@@ -114,15 +87,13 @@ def list_channels():
 
 @app.post("/api/channels/delete")
 def delete_channels(req: UsersReq):
-    return {"deleted": db.delete_channels(req.usernames)}
+    db.delete_channels(req.usernames)
+    return {"ok": True}
 
 
 @app.post("/api/channels/refresh")
-def refresh(req: RefreshReq):
-    usernames = req.usernames or db.all_usernames()
-    job = req.job or {"mode": "quick"}
-    queued = scraper.enqueue(usernames, job)
-    return {"queued": queued}
+def refresh(req: ScanReq):
+    return {"queued": scraper.enqueue([u.lower() for u in req.usernames if db.channel_exists(u.lower())], req.job)}
 
 
 @app.post("/api/channels/meta")
@@ -133,21 +104,19 @@ def update_meta(req: MetaReq):
 
 @app.get("/api/channels/{username}/videos")
 def channel_videos(username: str):
-    channel = db.get_channel(username)
-    if not channel:
-        raise HTTPException(404, "Không có kênh này")
-    return {
-        "channel": channel,
-        "videos": db.list_videos(username),
-        "worker": scraper.status(),
-    }
+    ch = db.get_channel(username)
+    if not ch:
+        raise HTTPException(404, "Không có kênh này trong danh sách")
+    return {"channel": ch, "videos": db.list_videos(username), "worker": scraper.status()}
 
 
 @app.post("/api/open")
 def open_urls(req: OpenReq):
-    for url in req.urls:
-        webbrowser.open(url)
-    return {"opened": len(req.urls)}
+    """Mở nhiều tab cùng lúc bằng trình duyệt mặc định (trình duyệt web chặn mở nhiều popup)."""
+    for u in req.urls[:100]:
+        if u.startswith("https://www.tiktok.com/") or u.startswith(f"http://{HOST}:{PORT}/"):
+            webbrowser.open_new_tab(u)
+    return {"ok": True}
 
 
 @app.get("/api/settings")
@@ -156,85 +125,73 @@ def get_settings():
 
 
 @app.post("/api/settings")
-def set_settings(req: SettingsReq):
-    values = {
-        key: value
-        for key, value in req.model_dump().items()
-        if value is not None
-    }
+def set_settings(values: dict):
     db.set_settings(values)
     return db.get_settings()
 
 
-def _workbook(headers: list[str], rows: list[list]) -> io.BytesIO:
-    book = Workbook()
-    sheet = book.active
-    if sheet is None:
-        sheet = book.create_sheet("Sheet")
-    sheet.append(headers)
-    for cell in sheet[1]:
-        cell.font = Font(bold=True)
-    for row in rows:
-        sheet.append(row)
+
+
+def _ts(v):
+    return datetime.fromtimestamp(v).strftime("%d/%m/%Y %H:%M") if v else ""
+
+
+def _xlsx(name, headers, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for r in rows:
+        ws.append(r)
+    ws.freeze_panes = "A2"
+    for col in ws.columns:
+        width = max(len(str(c.value or "")) for c in list(col)[:200])
+        ws.column_dimensions[col[0].column_letter].width = min(max(10, width + 2), 60)
     buf = io.BytesIO()
-    book.save(buf)
+    wb.save(buf)
     buf.seek(0)
-    return buf
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/api/export/channels.xlsx")
 def export_channels(usernames: str = ""):
-    selected = [u for u in usernames.split(",") if u] if usernames else None
-    channels = db.list_channels()
-    if selected:
-        wanted = set(selected)
-        channels = [ch for ch in channels if ch["username"] in wanted]
-    headers = [
-        "username",
-        "nickname",
-        "followers",
-        "following",
-        "likes",
-        "video_count",
-        "group_name",
-        "note",
-        "status",
-        "message",
-    ]
-    rows = [[ch.get(h) for h in headers] for ch in channels]
-    buf = _workbook(headers, rows)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=channels.xlsx"},
-    )
+    wanted = {u.lower() for u in usernames.split(",") if u}
+    rows = [c for c in db.list_channels() if not wanted or c["username"] in wanted]
+    headers = ["Username", "Tên kênh", "Link", "Follow", "Tăng follow", "Following", "Lượt thích", "Tổng view", "Tăng view",
+               "Số video", "Video đã quét", "View TB/video", "Tỷ lệ tương tác %", "View cao nhất", "Video 7 ngày",
+               "Video 30 ngày", "View 30 ngày", "Đăng gần nhất", "Tick xanh", "Riêng tư", "Nhóm", "Ghi chú", "Bio",
+               "Link bio", "Cập nhật lúc"]
+    data = [[c["unique_id"], c["nickname"], f"https://www.tiktok.com/@{c['unique_id']}", c["followers"],
+             c["d_followers"], c["following"], c["likes"], c["total_views"], c["d_views"], c["video_count"],
+             c["scanned"], c["avg_views"], c["er"], c["top_views"], c["posts_7d"], c["posts_30d"], c["views_30d"],
+             _ts(c["last_post"]), "Có" if c["verified"] else "", "Có" if c["private"] else "", c["group_name"],
+             c["note"], c["bio"], c["bio_link"], _ts(c["updated_at"])] for c in rows]
+    return _xlsx(f"kenh_tiktok_{datetime.now():%Y%m%d_%H%M}.xlsx", headers, data)
 
 
-VIDEO_EXPORT_HEADERS = [
-    "id",
-    "description",
-    "create_time",
-    "duration",
-    "play",
-    "digg",
-    "comment",
-    "share",
-    "collect",
-    "music",
-]
+def _video_table(username):
+    ch = db.get_channel(username)
+    if not ch:
+        raise HTTPException(404)
+    uid = ch["unique_id"] or username
+    headers = ["Link", "Mô tả", "Ngày đăng", "Thời lượng (s)", "View", "Tăng view", "Tim", "Bình luận", "Chia sẻ",
+               "Lưu", "Tỷ lệ tương tác %", "Nhạc"]
+    data = []
+    for v in db.list_videos(username):
+        inter = v["digg"] + v["comment"] + v["share"] + v["collect"]
+        data.append([f"https://www.tiktok.com/@{uid}/video/{v['id']}", v["description"], _ts(v["create_time"]),
+                     v["duration"], v["play"], v["play"] - v["prev_play"] if v["prev_play"] is not None else None,
+                     v["digg"], v["comment"], v["share"], v["collect"],
+                     round(inter / v["play"] * 100, 2) if v["play"] else None, v["music"]])
+    return uid, headers, data
 
 
 @app.get("/api/export/videos/{username}.xlsx")
 def export_videos(username: str):
-    videos = db.list_videos(username)
-    headers = VIDEO_EXPORT_HEADERS
-    rows = [[video.get(h) for h in headers] for video in videos]
-    buf = _workbook(headers, rows)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={username}.xlsx"},
-    )
+    uid, headers, data = _video_table(username)
+    return _xlsx(f"video_{uid}_{datetime.now():%Y%m%d_%H%M}.xlsx", headers, data)
 
 
 def _csv_cell(value):
@@ -246,55 +203,127 @@ def _csv_cell(value):
 
 @app.get("/api/export/videos/{username}.csv")
 def export_videos_csv(username: str):
-    videos = db.list_videos(username)
-    headers = VIDEO_EXPORT_HEADERS
+    uid, headers, data = _video_table(username)
     out = io.StringIO(newline="")
     writer = csv.writer(out)
     writer.writerow(headers)
-    for video in videos:
-        writer.writerow([_csv_cell(video.get(h)) for h in headers])
+    for row in data:
+        writer.writerow([_csv_cell(cell) for cell in row])
+    name = f"video_{uid}_{datetime.now():%Y%m%d_%H%M}.csv"
     return Response(
         out.getvalue().encode("utf-8-sig"),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={username}.csv"},
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 
-@app.post("/api/shutdown")
+def _is_our_tool(port):
+    try:
+        with urllib.request.urlopen(f"http://{HOST}:{port}/api/ping", timeout=2) as r:
+            return json.load(r).get("app") == APP_ID
+    except Exception:
+        return False
+
+
+def _port_free(port):
+    with socket.socket() as s:
+        try:
+            s.bind((HOST, port))
+            return True
+        except OSError:
+            return False
+
+
+def _message_box(text):
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, APP_NAME, 64)
+    else:
+        print(text)
+
+
+server: uvicorn.Server = None
+
+
 def shutdown():
-    threading.Thread(target=_exit_soon, daemon=True).start()
+    if server:
+        server.should_exit = True
+    # Chờ một chút để phản hồi HTTP kịp gửi đi rồi mới thoát hẳn process.
+    threading.Timer(1.5, lambda: os._exit(0)).start()
+
+
+@app.post("/api/shutdown")
+def api_shutdown():
+    shutdown()
     return {"ok": True}
 
 
-def _exit_soon() -> None:
-    import time
-
-    time.sleep(0.3)
-    os._exit(0)
-
-
-def main() -> None:
-    port = _free_port()
-    url = f"http://{HOST}:{port}/"
-    config = uvicorn.Config(app, host=HOST, port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    threading.Thread(target=server.run, daemon=True).start()
-    webbrowser.open(url)
+def main():
+    global PORT, scraper, server, _instance
+    open_browser = not os.environ.get("NO_OPEN")
+    # Đã có bản khác của tool đang chạy (cùng thư mục dữ liệu mặc định): chỉ mở lại trang,
+    # không chạy thêm bản thứ hai để tránh tranh nhau trình duyệt và database.
+    # Đặt TDK_DATA_DIR (chạy riêng, kiểm thử) thì bỏ qua bước này.
+    for port in ([] if os.environ.get("TDK_DATA_DIR") else range(8765, 8775)):
+        if _is_our_tool(port):
+            print(f"{APP_NAME} đang chạy sẵn tại http://{HOST}:{port} – đang mở lại trang...")
+            if open_browser:
+                webbrowser.open(f"http://{HOST}:{port}")
+            return
+    # Hai bản dùng chung một thư mục dữ liệu sẽ tranh nhau profile trình duyệt và ghi đè
+    # trạng thái kênh của nhau, kể cả khi đang ở hai cổng khác nhau.
     try:
+        _instance = instance_lock.acquire(DATA_DIR)
+    except instance_lock.AlreadyRunning as exc:
+        _message_box(str(exc))
+        return
+    PORT = next((p for p in range(8765, 8775) if _port_free(p)), 0)
+    if not PORT:
+        _message_box("Không tìm được cổng trống (8765-8774) để chạy tool.\nHãy khởi động lại máy rồi thử lại.")
+        return
+
+    db.init()
+    scraper = Scraper()
+    url = f"http://{HOST}:{PORT}"
+    print(f"{APP_NAME} đang chạy tại: {url}\nDữ liệu lưu tại: {DATA_DIR}")
+    # Tắt log truy cập; chỉ giữ cảnh báo.
+    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="warning",
+                                           loop="asyncio", http="h11", ws="none", log_config=None))
+    threading.Thread(target=server.run, daemon=True).start()
+
+    def open_when_ready():
+        for _ in range(100):
+            if server.started:
+                break
+            threading.Event().wait(0.1)
+        if open_browser:
+            webbrowser.open(url)
+    threading.Thread(target=open_when_ready, daemon=True).start()
+
+    if os.environ.get("NO_TRAY"):
+        threading.Event().wait()
+    else:
         from tray import run_tray
-
-        run_tray(url, on_quit=lambda: os._exit(0))
-    except Exception:
-        # Không có khay hệ thống thì giữ process bằng server.
-        server_thread_join()
-
-
-def server_thread_join() -> None:
-    while True:
-        import time
-
-        time.sleep(3600)
+        run_tray(url, shutdown)
 
 
 if __name__ == "__main__":
-    main()
+    if sys.stdout is None:
+        # Chạy bằng exe không có console: ghi mọi thứ in ra vào log.txt cạnh dữ liệu.
+        log_path = DATA_DIR / "log.txt"
+        too_big = log_path.exists() and log_path.stat().st_size > 2000000
+        log = open(log_path, "w" if too_big else "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = log
+        print(f"\n===== {datetime.now():%d/%m/%Y %H:%M:%S} =====")
+    else:
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _message_box(f"Tool gặp lỗi khi khởi động:\n{e}\n\nChi tiết trong file log.txt ở thư mục dữ liệu.")

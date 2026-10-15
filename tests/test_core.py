@@ -1,19 +1,74 @@
 import os
-import shutil
+import queue
+import sys
+import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.environ["TDK_DATA_DIR"])
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _fresh_db(name):
+    """Trỏ db sang thư mục trống riêng của test và khởi tạo."""
+    import db as dbmod
+
+    # Thư mục riêng cho từng test: kết nối của db không đóng ngay nên Windows không xóa được DB cũ.
+    data = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=DATA))
+    dbmod.DB_PATH = data / "data.db"
+    dbmod.init()
+    return dbmod
+
+
+def _make_scraper():
+    """Scraper có hàng đợi và khóa thật nhưng không chạy luồng nền, không mở trình duyệt."""
+    from scraper import Scraper
+
+    scraper = Scraper.__new__(Scraper)
+    scraper.jobs = queue.Queue()
+    scraper.pending = {}
+    scraper.current = None
+    scraper.lock = threading.Lock()
+    scraper._pw = None
+    scraper._ctx = None
+    scraper._ctx_visible = None
+    scraper.RETRY_DELAYS = (0, 0)
+    return scraper
+
+
+def _wait_until(condition, timeout=10):
+    deadline = timeout
+    while deadline > 0:
+        if condition():
+            return True
+        threading.Event().wait(0.02)
+        deadline -= 0.02
+    return condition()
+
+
+def _run_worker(scraper, condition):
+    """Chạy vòng _run thật (bỏ qua nhịp nghỉ 1,5 giây) cho đến khi điều kiện đúng."""
+    with mock.patch("time.sleep", lambda seconds: None):
+        threading.Thread(target=scraper._run, daemon=True).start()
+        return _wait_until(lambda: condition() and scraper.current is None)
+
+
+def _video(video_id, create_time=100, play=1, **extra):
+    row = {
+        "id": video_id, "description": "", "create_time": create_time, "duration": 5, "cover": "",
+        "play": play, "digg": 0, "comment": 0, "share": 0, "collect": 0, "music": "", "is_ad": 0,
+    }
+    row.update(extra)
+    return row
 
 
 class ParseInputTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import sys
-
-        sys.path.insert(0, str(ROOT))
         from scraper import parse_input
 
         cls.parse_input = staticmethod(parse_input)
@@ -56,70 +111,235 @@ class ParseInputTest(unittest.TestCase):
         self.assertEqual(self.parse_input("  \n,"), ([], []))
 
 
-class SchemaTest(unittest.TestCase):
+class DbTest(unittest.TestCase):
     def test_tables_and_channel_roundtrip(self):
-        import db
+        import sqlite3
 
-        if DATA.exists():
-            shutil.rmtree(DATA)
-        db.init()
+        db = _fresh_db("schema")
         added, existed = db.add_channels(["demo_user", "demo_user"])
         self.assertEqual(added, ["demo_user"])
         self.assertEqual(existed, ["demo_user"])
         db.save_channel_info("demo_user", {"followers": 10, "likes": 2, "video_count": 1})
-        db.finish_scan(
-            "demo_user",
-            [
-                {
-                    "id": "v1",
-                    "description": "hello",
-                    "create_time": 1_700_000_000,
-                    "duration": 5,
-                    "cover": "",
-                    "play": 100,
-                    "digg": 4,
-                    "comment": 1,
-                    "share": 0,
-                    "collect": 0,
-                    "music": "",
-                    "is_ad": 0,
-                }
-            ],
-            full=True,
-        )
+        db.finish_scan("demo_user", [_video("v1", play=100)], full=True)
         db.save_channel_info("demo_user", {"followers": 12, "likes": 3})
-        db.finish_scan(
-            "demo_user",
-            [
-                {
-                    "id": "v1",
-                    "description": "hello",
-                    "create_time": 1_700_000_000,
-                    "duration": 5,
-                    "cover": "",
-                    "play": 130,
-                    "digg": 4,
-                    "comment": 1,
-                    "share": 0,
-                    "collect": 0,
-                    "music": "",
-                    "is_ad": 0,
-                }
-            ],
-            full=False,
-        )
+        db.finish_scan("demo_user", [_video("v1", play=130)], full=False)
         row = next(item for item in db.list_channels() if item["username"] == "demo_user")
         self.assertEqual(row["total_views"], 130)
         self.assertEqual(row["d_followers"], 2)
-        import sqlite3
-
+        self.assertEqual(row["d_views"], 30)
+        self.assertIsNotNone(row["prev_ts"])
         names = [
-            row[0]
-            for row in sqlite3.connect(db.DB_PATH).execute(
+            r[0]
+            for r in sqlite3.connect(db.DB_PATH).execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
             )
         ]
         self.assertEqual(names, ["channels", "settings", "snapshots", "videos"])
+        # Lần cập nhật sau của cùng video giữ lại số view trước đó để tính mức tăng.
+        self.assertEqual(db.list_videos("demo_user")[0]["prev_play"], 100)
+
+    def test_keys_are_case_insensitive_and_unique_id_keeps_case(self):
+        db = _fresh_db("case")
+        db.add_channels(["Demo.User"])
+        self.assertTrue(db.channel_exists("demo.user"))
+        self.assertEqual(db.get_channel("DEMO.user")["unique_id"], "Demo.User")
+        self.assertEqual(db.add_channels(["demo.USER"]), ([], ["demo.USER"]))
+        db.delete_channels(["DEMO.USER"])
+        self.assertIsNone(db.get_channel("demo.user"))
+
+    def test_channels_list_in_added_order(self):
+        db = _fresh_db("order")
+        db.add_channels(["first", "second", "third"])
+        self.assertEqual([c["username"] for c in db.list_channels()], ["first", "second", "third"])
+
+    def test_engagement_rate_is_percent_and_includes_saves(self):
+        db = _fresh_db("er")
+        db.add_channels(["demo"])
+        db.finish_scan("demo", [_video("a", play=1000, digg=40, comment=5, share=3, collect=2)], full=False)
+        row = db.list_channels()[0]
+        self.assertEqual(row["er"], 5.0)
+        self.assertEqual(row["avg_views"], 1000)
+        self.assertEqual(row["top_views"], 1000)
+
+    def test_channel_without_videos_has_no_aggregates(self):
+        db = _fresh_db("empty")
+        db.add_channels(["demo"])
+        row = db.list_channels()[0]
+        self.assertEqual(row["scanned"], 0)
+        self.assertIsNone(row["total_views"])
+        self.assertIsNone(row["avg_views"])
+        self.assertIsNone(row["er"])
+        self.assertIsNone(row["d_followers"])
+
+    def test_snapshot_total_views_counts_every_stored_video(self):
+        db = _fresh_db("snapshot")
+        db.add_channels(["demo"])
+        db.finish_scan("demo", [_video("a", play=100), _video("b", play=50)], full=False)
+        # Lần quét nhanh chỉ thấy một video nhưng tổng view vẫn là của cả kênh.
+        db.finish_scan("demo", [_video("a", play=120)], full=False)
+        row = db.list_channels()[0]
+        self.assertEqual(row["total_views"], 170)
+        self.assertEqual(row["d_views"], 20)
+
+    def test_full_scan_drops_videos_that_disappeared(self):
+        db = _fresh_db("full")
+        db.add_channels(["demo"])
+        db.finish_scan("demo", [_video("a"), _video("gone")], full=False)
+        db.finish_scan("demo", [_video("a")], full=False)
+        self.assertEqual({v["id"] for v in db.list_videos("demo")}, {"a", "gone"})
+        self.assertIsNone(db.get_channel("demo")["full_scan_at"])
+        db.finish_scan("demo", [_video("a")], full=True)
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["a"])
+        self.assertIsNotNone(db.get_channel("demo")["full_scan_at"])
+
+    def test_settings_ignore_unknown_keys(self):
+        db = _fresh_db("settings")
+        db.set_settings({"show_browser": 1, "auto_refresh_minutes": "15", "bogus": "x"})
+        self.assertEqual(db.get_settings(), {"show_browser": "1", "auto_refresh_minutes": "15"})
+
+    def test_interrupted_jobs_become_errors_on_start(self):
+        db = _fresh_db("interrupted")
+        db.add_channels(["demo"])
+        db.set_status("demo", "running")
+        db.init()
+        channel = db.get_channel("demo")
+        self.assertEqual(channel["status"], "error")
+        self.assertIn("Bị dừng giữa chừng", channel["message"])
+
+    def test_old_database_gets_new_columns(self):
+        import sqlite3
+
+        import db as dbmod
+
+        data = Path(tempfile.mkdtemp(prefix="migrate-", dir=DATA))
+        path = data / "data.db"
+        old = sqlite3.connect(path)
+        legacy_schema = dbmod.SCHEMA.replace(
+            ",\n    last_scan_at INTEGER,\n    last_scan_label TEXT DEFAULT ''", ""
+        )
+        self.assertNotIn("last_scan_at", legacy_schema)
+        old.executescript(legacy_schema)
+        old.execute("INSERT INTO channels(username) VALUES('legacy')")
+        old.commit()
+        old.close()
+        dbmod.DB_PATH = path
+        dbmod.init()
+        dbmod.init()
+        columns = {row[1] for row in sqlite3.connect(path).execute("PRAGMA table_info(channels)")}
+        self.assertTrue({"last_scan_at", "last_scan_label"} <= columns)
+        self.assertEqual(dbmod.get_channel("legacy")["username"], "legacy")
+
+
+class JobTest(unittest.TestCase):
+    def test_normalize_job(self):
+        from scraper import normalize_job
+
+        self.assertEqual(normalize_job({"mode": "quick"}), {"mode": "quick"})
+        self.assertEqual(
+            normalize_job({"mode": "videos", "ids": ["1", 2, "x", "1", ""]}),
+            {"mode": "videos", "ids": ["1", "2"]},
+        )
+        scan = normalize_job({"mode": "scan", "limit": "5", "since": 900, "until": 100})
+        self.assertEqual((scan["limit"], scan["since"], scan["until"]), (5, 100, 900))
+        by_days = normalize_job({"mode": "scan", "days": 7})
+        self.assertEqual(by_days["until"], 0)
+        self.assertGreater(by_days["since"], 0)
+        self.assertEqual(normalize_job({"mode": "scan", "limit": -3})["limit"], 0)
+
+    def test_describe_job(self):
+        from scraper import describe_job, normalize_job
+
+        self.assertEqual(describe_job({"mode": "quick"}), "Cập nhật nhanh")
+        self.assertEqual(describe_job(normalize_job({"mode": "scan"})), "Quét toàn bộ video")
+        self.assertEqual(describe_job(normalize_job({"mode": "scan", "days": 7})), "Quét 7 ngày qua")
+        self.assertEqual(describe_job(normalize_job({"mode": "scan", "limit": 3})), "Quét 3 video gần nhất")
+        self.assertEqual(
+            describe_job(normalize_job({"mode": "videos", "ids": ["1", "2"]})), "Cập nhật view 2 video"
+        )
+
+
+class QueueTest(unittest.TestCase):
+    def setUp(self):
+        self.db = _fresh_db("queue")
+        self.db.add_channels(["demo", "other"])
+        self.scraper = _make_scraper()
+
+    def test_quick_does_not_replace_pending_job_but_scan_upgrades_it(self):
+        s = self.scraper
+        self.assertEqual(s.enqueue(["demo"], {"mode": "quick"}), 1)
+        self.assertEqual(s.enqueue(["demo"], {"mode": "quick"}), 0)
+        self.assertEqual(s.enqueue(["demo"], {"mode": "scan", "limit": 5}), 1)
+        self.assertEqual(s.pending["demo"]["mode"], "scan")
+        self.assertEqual(s.jobs.qsize(), 1)
+        self.assertEqual(s.enqueue(["demo"], {"mode": "quick"}), 0)
+        self.assertEqual(s.pending["demo"]["mode"], "scan")
+
+    def test_video_jobs_merge_ids_in_their_own_slot(self):
+        s = self.scraper
+        s.enqueue(["demo"], {"mode": "videos", "ids": ["1", "2"]})
+        s.enqueue(["demo"], {"mode": "videos", "ids": ["2", "3"]})
+        s.enqueue(["demo"], {"mode": "quick"})
+        self.assertEqual(s.pending["demo#videos"], {"mode": "videos", "ids": ["1", "2", "3"]})
+        self.assertEqual(s.pending["demo"], {"mode": "quick"})
+        self.assertEqual(s.jobs.qsize(), 2)
+
+    def test_status_matches_what_the_page_reads(self):
+        s = self.scraper
+        self.assertEqual(s.status(), {"queue": 0, "current": None})
+        s.enqueue(["demo", "other"], {"mode": "quick"})
+        self.assertEqual(s.status()["queue"], 2)
+        s.current = {"username": "demo", "label": "Cập nhật nhanh", "videos": 0, "total": 0, "started": 1}
+        status = s.status()
+        self.assertEqual(status["queue"], 3)
+        self.assertEqual(status["current"]["label"], "Cập nhật nhanh")
+        self.assertIsNot(status["current"], s.current)
+
+    def test_deleted_channel_is_skipped(self):
+        s = self.scraper
+        calls = []
+        s._scrape = lambda key, job: calls.append(key)
+        s.enqueue(["demo", "other"], {"mode": "quick"})
+        self.db.delete_channels(["demo"])
+        self.assertTrue(_run_worker(s, lambda: s.jobs.empty() and calls))
+        self.assertEqual(calls, ["other"])
+
+    def test_videos_mode_skips_channel_scrape(self):
+        s = self.scraper
+        calls = []
+        s._update_videos = lambda key, ids: calls.append(("videos", key, ids))
+        s._scrape = lambda key, job: calls.append(("scrape", key))
+        s.enqueue(["demo"], {"mode": "videos", "ids": ["1", "2"]})
+        self.assertTrue(_run_worker(s, lambda: calls))
+        self.assertEqual(calls, [("videos", "demo", ["1", "2"])])
+
+    def test_job_queued_while_running_goes_back_to_waiting(self):
+        s = self.scraper
+        seen = []
+
+        def scrape(key, job):
+            if seen:
+                return
+            s.enqueue([key], {"mode": "scan", "limit": 1})
+            seen.append(self.db.get_channel(key)["status"])
+
+        s._scrape = scrape
+        s.enqueue(["demo"], {"mode": "quick"})
+        # Dừng worker trước khi nó nhặt job vừa xếp: chỉ cần xem trạng thái ngay sau job đầu.
+        gate = threading.Event()
+        real_set_status = self.db.set_status
+
+        def set_status(key, status, *rest):
+            real_set_status(key, status, *rest)
+            if status == "queued" and seen:
+                gate.set()
+
+        with mock.patch.object(self.db, "set_status", set_status):
+            with mock.patch("time.sleep", lambda seconds: gate.wait(5) and threading.Event().wait(60)):
+                threading.Thread(target=s._run, daemon=True).start()
+                self.assertTrue(gate.wait(10))
+        self.assertEqual(seen, ["running"])
+        self.assertEqual(self.db.get_channel("demo")["status"], "queued")
+        self.assertEqual(s.pending["demo"]["mode"], "scan")
 
 
 class _Response:
@@ -139,7 +359,24 @@ class _Mouse:
         self.wheels.append((x, y))
 
 
+class _Locator:
+    def __init__(self, selector, html):
+        self.selector = selector
+        self.html = html
+
+    def count(self):
+        if "#captcha-container" in self.selector and 'id="captcha-container"' in self.html:
+            return 1
+        if "captcha_verify_container" in self.selector and "captcha_verify_container" in self.html:
+            return 1
+        if "[class*='captcha']" in self.selector and 'class="secsdk-captcha"' in self.html:
+            return 1
+        return 0
+
+
 class _Page:
+    html = "<html>captcha word only</html>"
+
     def __init__(self, payloads):
         self._payloads = list(payloads)
         self.mouse = _Mouse()
@@ -170,11 +407,11 @@ class _Page:
     def wait_for_timeout(self, ms):
         return None
 
-    def content(self):
-        return "<html></html>"
-
     def close(self):
         self.closed = True
+
+    def locator(self, selector):
+        return _Locator(selector, self.html)
 
     def _emit(self):
         if self._payloads and self._handler:
@@ -183,43 +420,135 @@ class _Page:
 
 class _Context:
     def __init__(self, page):
-        self.pages = [page]
+        self.page = page
+
+    def new_page(self):
+        return self.page
 
 
-class ScrollLoopTest(unittest.TestCase):
+def _item_list(*items, has_more=False):
+    return _Response(
+        "https://www.tiktok.com/api/post/item_list?cursor=0",
+        {"hasMore": has_more, "itemList": [
+            {"id": i[0], "desc": "", "createTime": i[1], "stats": {"playCount": i[2]}, "video": {}} for i in items
+        ]},
+    )
+
+
+def _scrape(name, page, job, setup=None):
+    from scraper import normalize_job
+
+    db = _fresh_db(name)
+    db.add_channels(["demo"])
+    if setup:
+        setup(db)
+    scraper = _make_scraper()
+    scraper._browser = lambda: _Context(page)
+    scraper._scrape("demo", normalize_job(job))
+    return db, scraper
+
+
+class ScrapeTest(unittest.TestCase):
     def test_scan_stops_when_has_more_is_false(self):
-        import db as dbmod
-        from scraper import Scraper
-
-        scroll_data = DATA / "scroll"
-        if scroll_data.exists():
-            shutil.rmtree(scroll_data)
-        scroll_data.mkdir(parents=True)
-        dbmod.DB_PATH = scroll_data / "data.db"
-        dbmod.init()
-        dbmod.add_channels(["demo"])
-        page = _Page(
-            [
-                _Response(
-                    "https://www.tiktok.com/api/post/item_list?cursor=0",
-                    {
-                        "hasMore": False,
-                        "itemList": [
-                            {"id": "2", "desc": "new", "createTime": 200, "stats": {"playCount": 5}, "video": {}},
-                            {"id": "1", "desc": "old", "createTime": 100, "stats": {"playCount": 9}, "video": {}},
-                        ],
-                    },
-                )
-            ]
-        )
-        scraper = Scraper.__new__(Scraper)
-        scraper._browser = lambda: _Context(page)
-        count = scraper._scrape("demo", {"mode": "scan"})
-        self.assertEqual(count, 2)
+        page = _Page([_item_list(("2", 200, 5), ("1", 100, 9))])
+        db, _ = _scrape("scroll", page, {"mode": "scan"})
         self.assertEqual(page.scrolls, 0)
         self.assertEqual(page.mouse.wheels, [])
-        stored = dbmod.list_videos("demo")
-        self.assertEqual([video["id"] for video in stored], ["2", "1"])
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["2", "1"])
+        channel = db.get_channel("demo")
+        self.assertEqual(channel["status"], "done")
+        self.assertEqual(channel["followers"], 3)
+        self.assertTrue(page.closed)
+
+    def test_scan_keeps_scrolling_while_tiktok_has_more(self):
+        page = _Page([
+            _item_list(("3", 300, 1), has_more=True),
+            _item_list(("2", 200, 1), has_more=True),
+            _item_list(("1", 100, 1), has_more=False),
+        ])
+        db, _ = _scrape("scroll-more", page, {"mode": "scan"})
+        self.assertEqual(page.scrolls, 2)
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["3", "2", "1"])
+
+    def test_quick_mode_never_scrolls(self):
+        page = _Page([_item_list(("2", 200, 1), has_more=True), _item_list(("1", 100, 1))])
+        db, _ = _scrape("quick", page, {"mode": "quick"})
+        self.assertEqual(page.scrolls, 0)
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["2"])
+        self.assertEqual(db.get_channel("demo")["message"], "")
+
+    def test_limit_counts_pinned_videos_extra(self):
+        # Ba video ghim cũ nằm đầu danh sách: dừng ở limit + 3 để vẫn thấy video mới nhất.
+        pinned = [("p1", 10, 1), ("p2", 11, 1), ("p3", 12, 1)]
+        page = _Page([
+            _item_list(*pinned, ("n2", 500, 1), has_more=True),
+            _item_list(("n1", 600, 1), has_more=True),
+            _item_list(("older", 50, 1), has_more=True),
+        ])
+        db, _ = _scrape("pinned", page, {"mode": "scan", "limit": 2})
+        ids = [v["id"] for v in db.list_videos("demo")]
+        self.assertEqual(ids, ["n1", "n2"])
+        self.assertEqual(page.scrolls, 1)
+
+    def test_since_drops_older_videos_and_pinned_video_does_not_stop_early(self):
+        page = _Page([
+            _item_list(("pin", 10, 1), ("a", 900, 1), ("b", 800, 1), has_more=True),
+            _item_list(("c", 700, 1), ("d", 100, 1), has_more=True),
+            _item_list(("e", 50, 1), has_more=False),
+        ])
+        db, _ = _scrape("since", page, {"mode": "scan", "since": 600})
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["a", "b", "c"])
+        self.assertIsNone(db.get_channel("demo")["full_scan_at"])
+
+    def test_full_scan_removes_vanished_videos_only_when_complete(self):
+        def seed(db):
+            db.finish_scan("demo", [_video("gone")], full=False)
+
+        db, _ = _scrape("full-ok", _Page([_item_list(("1", 100, 1))]), {"mode": "scan"}, seed)
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["1"])
+        self.assertIsNotNone(db.get_channel("demo")["full_scan_at"])
+        # Quét dở (còn has_more nhưng TikTok ngừng trả thêm): không được xóa video cũ.
+        pages = [_item_list(("1", 100, 1), has_more=True)]
+        db, _ = _scrape("full-partial", _Page(pages), {"mode": "scan"}, seed)
+        self.assertEqual({v["id"] for v in db.list_videos("demo")}, {"1", "gone"})
+        self.assertIn("TikTok ngừng trả thêm", db.get_channel("demo")["message"])
+
+    def test_private_channel_has_no_videos(self):
+        class Private(_Page):
+            def evaluate(self, script):
+                return (
+                    '{"__DEFAULT_SCOPE__":{"webapp.user-detail":{"userInfo":{"user":'
+                    '{"uniqueId":"demo","privateAccount":true},"stats":{"videoCount":4}}}}}'
+                )
+
+        db, _ = _scrape("private", Private([]), {"mode": "scan"})
+        channel = db.get_channel("demo")
+        self.assertEqual(channel["status"], "done")
+        self.assertEqual(channel["private"], 1)
+        self.assertIn("riêng tư", channel["message"])
+
+    def test_missing_channel_reports_reason(self):
+        class Missing(_Page):
+            def evaluate(self, script):
+                return '{"__DEFAULT_SCOPE__":{"webapp.user-detail":{"statusCode":10221}}}'
+
+        db, _ = _scrape("missing", Missing([]), {"mode": "quick"})
+        channel = db.get_channel("demo")
+        self.assertEqual(channel["status"], "error")
+        self.assertEqual(channel["message"], "Kênh không tồn tại hoặc bị khóa")
+
+    def test_progress_is_visible_while_scanning(self):
+        page = _Page([_item_list(("2", 200, 5), ("1", 100, 9))])
+
+        from scraper import normalize_job
+
+        db = _fresh_db("progress")
+        db.add_channels(["demo"])
+        scraper = _make_scraper()
+        scraper.current = {"username": "demo", "label": "", "videos": 0, "total": 0, "started": 0}
+        scraper._browser = lambda: _Context(page)
+        scraper._scrape("demo", normalize_job({"mode": "scan"}))
+        self.assertEqual(scraper.current["videos"], 2)
 
 
 class _NavigatingPage(_Page):
@@ -242,35 +571,12 @@ class _NavigatingPage(_Page):
 
 class NavigationTest(unittest.TestCase):
     def test_scan_survives_navigation_during_evaluate(self):
-        import db as dbmod
-        from scraper import Scraper
-
-        data = DATA / "navigation"
-        if data.exists():
-            shutil.rmtree(data)
-        data.mkdir(parents=True)
-        dbmod.DB_PATH = data / "data.db"
-        dbmod.init()
-        dbmod.add_channels(["demo"])
-        page = _NavigatingPage(
-            [
-                _Response(
-                    "https://www.tiktok.com/api/post/item_list?cursor=0",
-                    {
-                        "hasMore": False,
-                        "itemList": [
-                            {"id": "1", "desc": "one", "createTime": 100, "stats": {"playCount": 9}, "video": {}},
-                        ],
-                    },
-                )
-            ]
-        )
-        scraper = Scraper.__new__(Scraper)
-        scraper._browser = lambda: _Context(page)
-        count = scraper._scrape("demo", {"mode": "scan"})
-        self.assertEqual(count, 1)
+        page = _NavigatingPage([_item_list(("1", 100, 9))])
+        db, _ = _scrape("navigation", page, {"mode": "scan"})
         self.assertEqual(page.navigations, 1)
         self.assertEqual(page.load_waits, 1)
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["1"])
+        self.assertEqual(db.get_channel("demo")["status"], "done")
 
     def test_other_evaluate_errors_still_raise(self):
         from scraper import _evaluate_after_navigation
@@ -283,25 +589,10 @@ class NavigationTest(unittest.TestCase):
             _evaluate_after_navigation(Broken(), "() => 1")
 
 
-class _Locator:
-    def __init__(self, selector, html):
-        self.selector = selector
-        self.html = html
-
-    def count(self):
-        if "#captcha-container" in self.selector and 'id="captcha-container"' in self.html:
-            return 1
-        if "captcha_verify_container" in self.selector and "captcha_verify_container" in self.html:
-            return 1
-        if "[class*='captcha']" in self.selector and 'class="secsdk-captcha"' in self.html:
-            return 1
-        return 0
-
-
 class _DetailPage:
     def __init__(self):
         self.urls = []
-        self.html = "<html>captcha word only</html>"
+        self.closed = False
 
     def goto(self, url, **kwargs):
         self.urls.append(url)
@@ -324,113 +615,46 @@ class _DetailPage:
     def close(self):
         self.closed = True
 
-    def locator(self, selector):
-        return _Locator(selector, self.html)
-
 
 class UpdateVideosTest(unittest.TestCase):
     def test_updates_found_video_and_counts_missing(self):
-        import db as dbmod
-        from scraper import Scraper
-
-        data = DATA / "update"
-        if data.exists():
-            shutil.rmtree(data)
-        data.mkdir(parents=True)
-        dbmod.DB_PATH = data / "data.db"
-        dbmod.init()
-        dbmod.add_channels(["demo"])
+        db = _fresh_db("update")
+        db.add_channels(["demo"])
         page = _DetailPage()
-        scraper = Scraper.__new__(Scraper)
-        scraper._lock = threading.Lock()
-        scraper._jobs = {"demo": {"videos": 0}}
+        scraper = _make_scraper()
+        scraper.current = {"username": "demo", "videos": 0, "total": 2}
         scraper._browser = lambda: type("Ctx", (), {"new_page": lambda self: page})()
         scraper._update_videos("demo", ["kept", "missing"])
         self.assertTrue(page.closed)
-        self.assertEqual(scraper._jobs["demo"]["videos"], 2)
-        stored = dbmod.list_videos("demo")
-        self.assertEqual([video["id"] for video in stored], ["kept"])
+        self.assertEqual(scraper.current["videos"], 2)
+        self.assertEqual([video["id"] for video in db.list_videos("demo")], ["kept"])
         self.assertTrue(page.urls[0].endswith("/@demo/video/kept"))
         self.assertTrue(page.urls[1].endswith("/@demo/video/missing"))
-        note = dbmod.get_channel("demo")["message"]
-        self.assertIn("Cập nhật view 1 video", note)
-        self.assertIn("1 video không lấy được", note)
-
-
-class VideosJobTest(unittest.TestCase):
-    def test_videos_mode_skips_channel_scrape(self):
-        import queue
-        from scraper import Scraper
-
-        scraper = Scraper.__new__(Scraper)
-        scraper._lock = threading.Lock()
-        scraper._jobs = {"demo": {"status": "queued"}}
-        scraper._queue = queue.Queue()
-        calls = []
-        scraper._update_videos = lambda key, ids: calls.append(("videos", key, ids))
-        scraper._scrape = lambda key, job: calls.append(("scrape", key))
-        scraper._queue.put(("demo", {"mode": "videos", "ids": ["1", "2"]}))
-        worker = threading.Thread(target=scraper._run, daemon=True)
-        worker.start()
-        scraper._queue.join()
-        self.assertEqual(calls, [("videos", "demo", ["1", "2"])])
-        self.assertEqual(scraper._jobs["demo"]["status"], "done")
+        channel = db.get_channel("demo")
+        self.assertEqual(channel["status"], "done")
+        self.assertIn("Cập nhật view 1 video", channel["message"])
+        self.assertIn("1 video không lấy được", channel["message"])
 
 
 class CaptchaTest(unittest.TestCase):
     def test_word_in_html_is_not_a_widget(self):
-        from scraper import _has_captcha
+        from scraper import Scraper
 
         page = _DetailPage()
-        self.assertFalse(_has_captcha(page))
+        page.html = "<html>captcha word only</html>"
+        page.locator = lambda selector: _Locator(selector, page.html)
+        self.assertFalse(Scraper._has_captcha(page))
         page.html = '<div id="captcha-container"></div>'
-        self.assertTrue(_has_captcha(page))
+        self.assertTrue(Scraper._has_captcha(page))
 
-
-def _queue_scraper(name):
-    """Scraper chạy hàng đợi thật nhưng trình duyệt giả, không chờ khi thử lại."""
-    import queue
-
-    import db as dbmod
-    from scraper import Scraper
-
-    data = DATA / name
-    if data.exists():
-        shutil.rmtree(data)
-    data.mkdir(parents=True)
-    dbmod.DB_PATH = data / "data.db"
-    dbmod.init()
-    scraper = Scraper.__new__(Scraper)
-    scraper._lock = threading.Lock()
-    scraper._jobs = {}
-    scraper._queue = queue.Queue()
-    scraper._context = None
-    scraper._playwright = None
-    scraper.RETRY_DELAYS = (0, 0)
-    return scraper, dbmod
-
-
-def _one_video_page():
-    return _Page(
-        [
-            _Response(
-                "https://www.tiktok.com/api/post/item_list?cursor=0",
-                {"hasMore": False, "itemList": [{"id": "9", "createTime": 1, "stats": {"playCount": 1}, "video": {}}]},
-            )
-        ]
-    )
-
-
-class _CaptchaPage(_Page):
-    def locator(self, selector):
-        return _Locator(selector, '<div id="captcha-container"></div>')
-
-
-class CaptchaQueueTest(unittest.TestCase):
     def test_captcha_marks_channel_and_queue_moves_on(self):
-        scraper, dbmod = _queue_scraper("captcha-queue")
-        dbmod.add_channels(["blocked", "ok"])
-        pages = {"blocked": _CaptchaPage([]), "ok": _one_video_page()}
+        class CaptchaPage(_Page):
+            html = '<div id="captcha-container"></div>'
+
+        db = _fresh_db("captcha-queue")
+        db.add_channels(["blocked", "ok"])
+        scraper = _make_scraper()
+        pages = {"blocked": CaptchaPage([]), "ok": _Page([_item_list(("9", 1, 1))])}
         order = []
         real_scrape = scraper._scrape
 
@@ -441,87 +665,72 @@ class CaptchaQueueTest(unittest.TestCase):
         scraper._scrape = scrape
         scraper._browser = lambda: _Context(pages[order[-1]])
         scraper.enqueue(["blocked", "ok"], {"mode": "quick"})
-        threading.Thread(target=scraper._run, daemon=True).start()
-        scraper._queue.join()
 
-        # Hành vi hiện tại: captcha không dừng hàng đợi, kênh sau vẫn được quét
-        # và kênh bị captcha không bị quét lại tự động.
+        def finished():
+            return all(db.get_channel(k)["status"] in ("done", "error") for k in ("blocked", "ok"))
+
+        self.assertTrue(_run_worker(scraper, finished))
         self.assertEqual(order, ["blocked", "ok"])
-        blocked = dbmod.get_channel("blocked")
+        blocked = db.get_channel("blocked")
         self.assertEqual(blocked["status"], "error")
         self.assertIn("captcha", blocked["message"])
+        self.assertNotIn("Lỗi:", blocked["message"])
         self.assertIsNone(blocked["last_scan_at"])
-        self.assertEqual(dbmod.get_channel("ok")["status"], "done")
+        self.assertEqual(db.get_channel("ok")["status"], "done")
 
 
 class RetryTest(unittest.TestCase):
     def _run_one(self, name, failures):
-        scraper, dbmod = _queue_scraper(name)
-        dbmod.add_channels(["demo"])
+        db = _fresh_db(name)
+        db.add_channels(["demo"])
+        scraper = _make_scraper()
         calls = []
 
         def scrape(key, job):
             calls.append(key)
             if len(calls) <= len(failures):
                 raise failures[len(calls) - 1]
-            return 3
+            db.set_status(key, "done", "")
 
         scraper._scrape = scrape
         scraper.enqueue(["demo"], {"mode": "scan", "limit": 3})
-        threading.Thread(target=scraper._run, daemon=True).start()
-        scraper._queue.join()
-        return calls, dbmod.get_channel("demo"), scraper
+        self.assertTrue(_run_worker(scraper, lambda: db.get_channel("demo")["status"] in ("done", "error")))
+        return calls, db.get_channel("demo")
 
     def test_transient_error_is_retried_then_succeeds(self):
-        calls, channel, scraper = self._run_one(
-            "retry-ok", [RuntimeError("Timeout 30000ms exceeded")]
-        )
+        calls, channel = self._run_one("retry-ok", [RuntimeError("Timeout 30000ms exceeded")])
         self.assertEqual(len(calls), 2)
         self.assertEqual(channel["status"], "done")
         self.assertEqual(channel["last_scan_label"], "Quét 3 video gần nhất")
         self.assertIsNotNone(channel["last_scan_at"])
-        self.assertEqual(scraper._jobs["demo"]["status"], "done")
 
     def test_transient_error_gives_up_after_three_attempts(self):
         errors = [RuntimeError("net::ERR_CONNECTION_RESET")] * 3
-        calls, channel, _ = self._run_one("retry-fail", errors)
+        calls, channel = self._run_one("retry-fail", errors)
         self.assertEqual(len(calls), 3)
         self.assertEqual(channel["status"], "error")
         self.assertIn("đã thử 3 lần", channel["message"])
 
-    def test_permanent_and_captcha_errors_are_not_retried(self):
-        from scraper import CAPTCHA_MESSAGE, CaptchaError
+    def test_permanent_and_profile_errors_are_not_retried(self):
+        from scraper import ProfileBusyError
 
         for name, error in (
             ("no-retry-missing", RuntimeError("Kênh không tồn tại")),
-            ("no-retry-captcha", CaptchaError(CAPTCHA_MESSAGE)),
+            ("no-retry-profile", ProfileBusyError("Hồ sơ trình duyệt đang bị giữ")),
         ):
-            calls, channel, _ = self._run_one(name, [error])
+            calls, channel = self._run_one(name, [error])
             self.assertEqual(len(calls), 1, name)
             self.assertEqual(channel["status"], "error", name)
             self.assertNotIn("đã thử", channel["message"], name)
 
 
-class DescribeJobTest(unittest.TestCase):
-    def test_labels(self):
-        from scraper import describe_job
-
-        self.assertEqual(describe_job({"mode": "quick"}), "Cập nhật nhanh")
-        self.assertEqual(describe_job({"mode": "scan"}), "Quét toàn bộ video")
-        self.assertEqual(describe_job({"mode": "scan", "days": 7}), "Quét 7 ngày qua")
-        self.assertEqual(describe_job({"mode": "videos", "ids": ["1", "2"]}), "Cập nhật view 2 video")
-
-
 class InstanceLockTest(unittest.TestCase):
     def test_second_app_on_same_data_dir_is_refused(self):
         import subprocess
-        import sys
 
         import instance_lock
 
-        data = DATA / "lock"
-        if data.exists():
-            shutil.rmtree(data)
+        data = Path(tempfile.mkdtemp(prefix="lock-", dir=DATA))
         held = instance_lock.acquire(data)
         try:
             probe = (
@@ -545,52 +754,101 @@ class InstanceLockTest(unittest.TestCase):
         again.release()
         self.assertFalse((data / instance_lock.PID_NAME).exists())
 
-    def test_old_database_gets_new_columns(self):
-        import sqlite3
 
-        import db as dbmod
-
-        data = DATA / "migrate"
-        if data.exists():
-            shutil.rmtree(data)
-        data.mkdir(parents=True)
-        path = data / "data.db"
-        old = sqlite3.connect(path)
-        legacy_schema = dbmod.SCHEMA.replace(
-            ",\n    last_scan_at INTEGER,\n    last_scan_label TEXT DEFAULT ''", ""
-        )
-        self.assertNotIn("last_scan_at", legacy_schema)
-        old.executescript(legacy_schema)
-        old.execute("INSERT INTO channels(username) VALUES('legacy')")
-        old.commit()
-        old.close()
-        dbmod.DB_PATH = path
-        dbmod.init()
-        dbmod.init()
-        columns = {row[1] for row in sqlite3.connect(path).execute("PRAGMA table_info(channels)")}
-        self.assertTrue({"last_scan_at", "last_scan_label"} <= columns)
-        self.assertEqual(dbmod.get_channel("legacy")["username"], "legacy")
-
-
-class ExportCsvTest(unittest.TestCase):
+class ApiTest(unittest.TestCase):
     def _client(self, name):
-        import sys
-
-        sys.path.insert(0, str(ROOT))
         import app as appmod
-        import db as dbmod
         from fastapi.testclient import TestClient
 
-        # Nhả khóa dữ liệu của app để các test khác còn xóa được thư mục DATA.
-        appmod._instance.release()
-        data = DATA / name
-        if data.exists():
-            shutil.rmtree(data)
-        data.mkdir(parents=True)
-        dbmod.DB_PATH = data / "data.db"
-        dbmod.init()
-        dbmod.add_channels(["demo"])
-        return TestClient(appmod.app), dbmod
+        db = _fresh_db(name)
+        scraper = _make_scraper()
+        appmod.scraper = scraper
+        return TestClient(appmod.app), db, scraper, appmod
+
+    def test_ping_identifies_the_tool(self):
+        client, *_ = self._client("api-ping")
+        self.assertEqual(client.get("/api/ping").json(), {"app": "theo-doi-kenh-tiktok"})
+
+    def test_add_list_and_refresh_channels(self):
+        client, db, scraper, _ = self._client("api-channels")
+        res = client.post("/api/channels", json={"text": "@Demo bad! https://www.tiktok.com/@Other",
+                                                 "scan": {"mode": "quick"}})
+        self.assertEqual(res.json(), {"added": ["demo", "other"], "existed": [], "invalid": ["bad!"]})
+        self.assertEqual(scraper.jobs.qsize(), 2)
+        listing = client.get("/api/channels").json()
+        self.assertEqual([c["username"] for c in listing["channels"]], ["demo", "other"])
+        self.assertEqual(listing["worker"], {"queue": 2, "current": None})
+        # Kênh không có trong danh sách bị bỏ qua; job là bắt buộc.
+        res = client.post("/api/channels/refresh", json={"usernames": ["Demo", "ghost"], "job": {"mode": "scan"}})
+        self.assertEqual(res.json(), {"queued": 1})
+        self.assertEqual(client.post("/api/channels/refresh", json={"usernames": ["demo"]}).status_code, 422)
+
+    def test_meta_delete_and_videos(self):
+        client, db, scraper, _ = self._client("api-meta")
+        db.add_channels(["demo"])
+        client.post("/api/channels/meta", json={"usernames": ["DEMO"], "group_name": "A", "note": "n"})
+        channel = client.get("/api/channels/demo/videos").json()["channel"]
+        self.assertEqual((channel["group_name"], channel["note"]), ("A", "n"))
+        self.assertEqual(client.get("/api/channels/ghost/videos").status_code, 404)
+        self.assertEqual(client.post("/api/channels/delete", json={"usernames": ["demo"]}).json(), {"ok": True})
+        self.assertIsNone(db.get_channel("demo"))
+
+    def test_open_only_allows_tiktok_and_the_tool_itself(self):
+        client, *_ = self._client("api-open")
+        opened = []
+        urls = [
+            "https://www.tiktok.com/@a/video/1",
+            "https://evil.example/",
+            "file:///C:/Windows/System32/calc.exe",
+            "http://127.0.0.1:8765/videos?u=a",
+        ]
+        with mock.patch("webbrowser.open_new_tab", opened.append):
+            client.post("/api/open", json={"urls": urls})
+        self.assertEqual(opened, [urls[0], urls[3]])
+
+    def test_settings_roundtrip(self):
+        client, *_ = self._client("api-settings")
+        res = client.post("/api/settings", json={"show_browser": "1", "auto_refresh_minutes": 30})
+        self.assertEqual(res.json(), {"show_browser": "1", "auto_refresh_minutes": "30"})
+        self.assertEqual(client.get("/api/settings").json(), res.json())
+
+
+class ExportTest(unittest.TestCase):
+    def _client(self, name):
+        import app as appmod
+        from fastapi.testclient import TestClient
+
+        db = _fresh_db(name)
+        appmod.scraper = _make_scraper()
+        return TestClient(appmod.app), db
+
+    def test_channels_xlsx_has_vietnamese_columns(self):
+        import io
+        import re
+
+        from openpyxl import load_workbook
+
+        client, db = self._client("export-channels")
+        db.add_channels(["demo", "other"])
+        db.save_channel_info("demo", {"nickname": "Demo", "followers": 7, "verified": 1})
+        db.finish_scan("demo", [_video("v1", play=10, digg=1)], full=False)
+        res = client.get("/api/export/channels.xlsx?usernames=demo")
+        self.assertEqual(res.status_code, 200)
+        self.assertRegex(res.headers["content-disposition"], r'filename="kenh_tiktok_\d{8}_\d{4}\.xlsx"')
+        sheet = load_workbook(io.BytesIO(res.content)).active
+        rows = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        self.assertEqual(len(rows), 2)
+        head = rows[0]
+        self.assertEqual(len(head), 25)
+        self.assertEqual(head[:4], ["Username", "Tên kênh", "Link", "Follow"])
+        row = dict(zip(head, rows[1]))
+        self.assertEqual(row["Link"], "https://www.tiktok.com/@demo")
+        self.assertEqual(row["Follow"], 7)
+        self.assertEqual(row["Tick xanh"], "Có")
+        self.assertIn(row["Riêng tư"], (None, ""))
+        self.assertEqual(row["Video đã quét"], 1)
+        self.assertEqual(row["Tỷ lệ tương tác %"], 10.0)
+        self.assertTrue(re.match(r"\d\d/\d\d/\d{4} \d\d:\d\d", row["Cập nhật lúc"]))
 
     def test_csv_matches_xlsx_and_neutralises_formulas(self):
         import csv
@@ -598,46 +856,40 @@ class ExportCsvTest(unittest.TestCase):
 
         from openpyxl import load_workbook
 
-        client, dbmod = self._client("export_csv")
-        base = {"cover": "", "duration": 5, "digg": 4, "comment": 3, "share": 2, "collect": 1}
+        client, db = self._client("export-csv")
+        db.add_channels(["demo"])
         videos = [
-            {"id": "v1", "description": "=SUM(A1)", "create_time": 1_700_000_001, "play": 100, "music": "@mix"},
-            {"id": "v2", "description": "Xin chào, \"Việt\"\nNam", "create_time": 1_700_000_002, "play": -7, "music": "-x"},
-            {"id": "v3", "description": "+1 ok", "create_time": 1_700_000_003, "play": 0, "music": ""},
+            _video("v1", 1_700_000_001, 100, description="=SUM(A1)", music="@mix"),
+            _video("v2", 1_700_000_002, -7, description='Xin chào, "Việt"\nNam', music="-x"),
+            _video("v3", 1_700_000_003, 0, description="+1 ok", music=""),
         ]
-        dbmod.finish_scan("demo", [{**base, **video} for video in videos], full=True)
+        db.finish_scan("demo", videos, full=False)
 
         res = client.get("/api/export/videos/demo.csv")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res.headers["content-type"].startswith("text/csv"))
-        self.assertEqual(res.headers["content-disposition"], "attachment; filename=demo.csv")
+        self.assertRegex(res.headers["content-disposition"], r'filename="video_demo_\d{8}_\d{4}\.csv"')
         self.assertTrue(res.content.startswith(b"\xef\xbb\xbf"))
         rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig"), newline="")))
 
         sheet = load_workbook(io.BytesIO(client.get("/api/export/videos/demo.xlsx").content)).active
         xlsx = [[cell.value for cell in row] for row in sheet.iter_rows()]
         self.assertEqual(rows[0], xlsx[0])
-        self.assertEqual([row[0] for row in rows[1:]], ["v3", "v2", "v1"])
-        self.assertEqual([row[0] for row in rows[1:]], [row[0] for row in xlsx[1:]])
-        by_id = {row[0]: row for row in rows[1:]}
+        self.assertEqual(rows[0][:2], ["Link", "Mô tả"])
+        self.assertEqual([row[0].rsplit("/", 1)[-1] for row in rows[1:]], ["v3", "v2", "v1"])
+        by_id = {row[0].rsplit("/", 1)[-1]: row for row in rows[1:]}
         self.assertEqual(by_id["v1"][1], "'=SUM(A1)")
-        self.assertEqual(by_id["v1"][9], "'@mix")
-        self.assertEqual(by_id["v2"][1], "Xin chào, \"Việt\"\nNam")
-        self.assertEqual(by_id["v2"][9], "'-x")
+        self.assertEqual(by_id["v1"][11], "'@mix")
+        self.assertEqual(by_id["v2"][1], 'Xin chào, "Việt"\nNam')
+        self.assertEqual(by_id["v2"][11], "'-x")
         self.assertEqual(by_id["v2"][4], "-7")
         self.assertEqual(by_id["v3"][1], "'+1 ok")
-        self.assertEqual(by_id["v3"][9], "")
+        self.assertEqual(by_id["v3"][11], "")
 
-    def test_no_videos_returns_only_header(self):
-        import csv
-        import io
-
-        client, _ = self._client("export_csv_empty")
-        res = client.get("/api/export/videos/nobody.csv")
-        self.assertEqual(res.status_code, 200)
-        rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig"), newline="")))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0][:3], ["id", "description", "create_time"])
+    def test_unknown_channel_is_404(self):
+        client, _ = self._client("export-404")
+        self.assertEqual(client.get("/api/export/videos/nobody.csv").status_code, 404)
+        self.assertEqual(client.get("/api/export/videos/nobody.xlsx").status_code, 404)
 
 
 if __name__ == "__main__":
