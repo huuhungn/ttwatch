@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Tool chạy trên Windows (khóa file msvcrt, khay hệ thống); runner Windows có sẵn Chrome và Edge
+    # cho test giao diện của Playwright.
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Cài phụ thuộc
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Lint (tên chưa định nghĩa, lỗi cú pháp)
+        run: ruff check --select F,E9 .
+
+      - name: Kiểm tra cú pháp JS
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem static -Filter *.js) {
+            node --check $f.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Lỗi cú pháp: $($f.Name)" }
+          }
+
+      - name: Test
+        env:
+          TDK_DATA_DIR: ${{ runner.temp }}\tdk-data
+        run: python -m pytest -q
+
+      - name: Ảnh chụp giao diện từ test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screens
+          path: docs/screens/*.png
+          if-no-files-found: ignore
+          retention-days: 7

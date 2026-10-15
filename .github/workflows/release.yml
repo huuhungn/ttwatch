@@ -1,0 +1,94 @@
+name: Release
+
+# Đẩy tag dạng v1.2.3 để build exe và tạo GitHub Release có file zip tải về.
+# Chạy tay (workflow_dispatch) thì chỉ build và đính kèm file zip vào lần chạy (artifact), không tạo Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Cài phụ thuộc
+        run: python -m pip install -r requirements-dev.txt pyinstaller
+
+      - name: Test trước khi đóng gói
+        env:
+          TDK_DATA_DIR: ${{ runner.temp }}\tdk-data
+        run: python -m pytest -q
+
+      - name: Đóng gói
+        run: >
+          python -m PyInstaller --noconfirm --clean --windowed --name TheoDoiKenhTiktok
+          --add-data "static;static"
+          --collect-submodules uvicorn --collect-submodules pystray
+          app.py
+
+      - name: Chạy thử exe vừa build (khởi động, ping, tắt)
+        shell: pwsh
+        env:
+          TDK_DATA_DIR: ${{ runner.temp }}\exe-smoke
+          NO_OPEN: "1"
+          NO_TRAY: "1"
+        run: |
+          $exe = "dist\TheoDoiKenhTiktok\TheoDoiKenhTiktok.exe"
+          $p = Start-Process $exe -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+            Start-Sleep -Milliseconds 500
+            try {
+              $r = Invoke-RestMethod http://127.0.0.1:8765/api/ping -TimeoutSec 2
+              if ($r.app -eq "theo-doi-kenh-tiktok") { $ok = $true }
+            } catch {}
+          }
+          if (-not $ok) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw "Exe không phản hồi /api/ping" }
+          $page = Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing
+          if ($page.StatusCode -ne 200 -or $page.Content -notmatch "Theo dõi kênh") { throw "Trang chủ không đúng" }
+          Invoke-RestMethod -Method Post http://127.0.0.1:8765/api/shutdown | Out-Null
+          $p.WaitForExit(10000) | Out-Null
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "Exe chạy được: ping, trang chủ, tắt."
+
+      - name: Đặt tên và nén
+        id: pack
+        shell: pwsh
+        run: |
+          $ver = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
+          $zip = "TheoDoiKenhTiktok-$ver-win64.zip"
+          Compress-Archive -Path dist\TheoDoiKenhTiktok -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          Write-Host "$zip  sha256=$hash"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.zip }}
+          path: |
+            ${{ steps.pack.outputs.zip }}
+            ${{ steps.pack.outputs.zip }}.sha256
+          retention-days: 30
+
+      - name: Tạo GitHub Release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "${{ steps.pack.outputs.zip }}"
+          gh release create $env:GITHUB_REF_NAME $zip "$zip.sha256" `
+            --title "ttwatch $env:GITHUB_REF_NAME" --generate-notes

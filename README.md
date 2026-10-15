@@ -4,6 +4,12 @@ Tên cũ của repo là `channel-watch`. Tên dữ liệu và biến môi trư�
 
 Dựng lại từ `TheoDoiKenhTiktok.exe` (PyInstaller, Python 3.13). `recovered/` là bản dựng lại từ bytecode, khớp từng code object với bản gốc và có script kiểm chứng. Mã ở thư mục gốc dựng từ đó, thêm các phần có chủ đích ghi ở `docs/scraper-diff.md`.
 
+> **Nguồn gốc và lưu ý.** Đây là bản dựng lại không chính thức, dùng cho mục đích cá nhân, từ công cụ
+> `TheoDoiKenhTiktok.exe` do một tác giả khác chia sẻ. Giao diện trong `static/` (logo, bố cục, văn bản) lấy từ gói
+> gốc và thư mục `recovered/` là mã dựng lại từ chính bytecode của nó. Quyền với các phần đó thuộc về tác giả gốc;
+> repo này không cấp giấy phép nào cho chúng. Phần mới (`insights.py`, `charts.js`, `panels.js`, test, CI…) do
+> chủ repo viết. Nếu bạn là tác giả gốc và muốn gỡ hoặc ghi công khác đi, hãy mở issue.
+
 ## Tính năng
 
 - **Kênh**: bảng theo dõi follow, tim, view, tương tác %, mức tăng so với lần trước, xu hướng 30 ngày, nhóm, ghi chú; chọn nhiều, menu chuột phải, xuất Excel.
@@ -31,6 +37,13 @@ uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 Trang mở tại `http://127.0.0.1:8765/` (cổng đầu tiên còn trống trong 8765–8774). Chạy từ source thì dữ liệu nằm cạnh `app.py`; bản đóng gói thì ở `TheoDoiKenhTiktok_data` cạnh exe (hoặc `%LOCALAPPDATA%\TheoDoiKenhTiktok` nếu không ghi được). Đặt `TDK_DATA_DIR` để trỏ sang thư mục khác. `NO_OPEN=1` không mở trình duyệt, `NO_TRAY=1` không hiện biểu tượng khay.
 
 Tool chỉ đọc trang TikTok công khai bằng trình duyệt của máy bạn. Không gửi dữ liệu đi đâu khác. Kênh riêng tư và captcha vẫn chặn như bản gốc.
+
+## CI và phát hành
+
+- `.github/workflows/ci.yml`: mỗi lần push/PR chạy ruff, kiểm tra cú pháp JS và toàn bộ test (kể cả giao diện với Chrome) trên Windows.
+- `.github/workflows/release.yml`: đẩy tag `v*` (ví dụ `git tag v0.1.0 && git push origin v0.1.0`) thì build exe, chạy thử exe (ping, trang chủ, tắt), nén zip kèm SHA256 và tạo GitHub Release. Chạy tay ở tab Actions thì chỉ tạo artifact.
+
+Máy khác chỉ cần tải zip ở mục Releases, giải nén và chạy `TheoDoiKenhTiktok.exe`; dữ liệu nằm trong `TheoDoiKenhTiktok_data` cạnh exe.
 
 ## Kiểm thử
 
