@@ -1,11 +1,11 @@
 const tiktokUrl = (c) => `https://www.tiktok.com/@${c.unique_id || c.username}`;
 const videosUrl = (c) => `${location.origin}/videos?u=${encodeURIComponent(c.username)}`;
 let worker = {};
-let sparks = {}; // username -> [follow...] cho cột xu hướng
-const pendingDelete = new Set(); // kênh đã ẩn, đang chờ hết thời gian hoàn tác mới xóa thật
+let sparks = {}; // username -> [follow...] for the trend column
+const pendingDelete = new Set(); // hidden channels, deleted for real only once the undo window expires
 let firstLoad = true;
 
-// Gợi ý cách xử lý cho các lỗi hay gặp; thông báo gốc vẫn hiện nguyên văn.
+// Remediation hints for common errors; the original message is still shown verbatim.
 function errorHint(msg) {
   const m = (msg || "").toLowerCase();
   if (m.includes("captcha")) return "TikTok yêu cầu xác minh. Quét lại: cửa sổ trình duyệt sẽ tự hiện để bạn giải captcha (hoặc bật \"Hiện cửa sổ trình duyệt\" trong Cài đặt); giải xong tool tự chạy tiếp.";
@@ -115,7 +115,7 @@ function showMenu(x, y, sel) {
   ]);
 }
 
-// ---------------------------------------------------------------- dữ liệu
+// ---------------------------------------------------------------- data
 
 let lastJson = "";
 async function load() {
@@ -194,7 +194,7 @@ function updateGroups(rows) {
   renderChips(rows, groups, hasNone);
 }
 
-// Chip nhóm: lọc nhanh bằng một cú bấm; chuột phải để đổi tên hoặc bỏ nhóm cho cả nhóm.
+// Group chips: one-click quick filter; right-click to rename the group or clear it from all its channels.
 function renderChips(rows, groups, hasNone) {
   const box = $("#groupChips");
   box.hidden = groups.length === 0;
@@ -264,7 +264,7 @@ function applyFilter() {
   });
 }
 
-// ---------------------------------------------------------------- hành động
+// ---------------------------------------------------------------- actions
 
 const USER_RE = /^@?[A-Za-z0-9._]{2,24}$/;
 function detectCount(text) {
@@ -331,7 +331,7 @@ async function scanChannels(sel) {
   if (job) refresh(sel, job);
 }
 
-// Ẩn ngay, chỉ xóa thật sau UNDO_MS để còn hoàn tác được (xóa kênh kéo theo toàn bộ video và lịch sử).
+// Hide immediately, delete for real only after UNDO_MS so it can still be undone (deleting a channel also removes all its videos and history).
 const UNDO_MS = window.UNDO_MS || 8000;
 function removeChannels(sel) {
   const names = sel.map((c) => c.username);
@@ -426,7 +426,7 @@ bindTableKeys(table, {
   " ": (sel) => openDrawer(sel[0]),
 });
 
-// ---------------------------------------------------------------- cài đặt
+// ---------------------------------------------------------------- settings
 
 const hourOptions = '<option value="">Tắt</option>' + Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, "0")}:00</option>`).join("");
 $("#setQuietStart").innerHTML = hourOptions;
@@ -492,4 +492,4 @@ load();
 loadSparks();
 setInterval(load, 2000);
 setInterval(loadSparks, 60000);
-setInterval(() => table.render(), 60000); // làm mới "x phút trước"
+setInterval(() => table.render(), 60000); // refresh the "x minutes ago" labels

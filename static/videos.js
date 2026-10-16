@@ -35,7 +35,7 @@ const table = new DataTable({
   columns,
   rowKey: (r) => r.id,
   storageKey: "videos-table",
-  // Vượt trội: gấp đôi trung vị của kênh (cần ≥ 5 video để trung vị có nghĩa).
+  // Outperformer: at least double the channel median (needs >= 5 videos for the median to be meaningful).
   rowClass: (r) => (table.rows.length >= 5 && medianPlay && r.play >= 2 * medianPlay ? "row-star" : ""),
   onOpen: (r) => openUrls([videoUrl(r)]),
   onContextMenu: (e, sel) => showMenu(e.clientX, e.clientY, sel),
@@ -111,7 +111,7 @@ function renderAnalysis(rows) {
     cells.map((row) => row.map((c) => ({ count: c.length, avg_views: c.length ? Math.round(c.reduce((a, b) => a + b, 0) / c.length) : 0 })))
   );
 }
-// Phần phân tích đóng sẵn để bảng video có chỗ; nhớ lựa chọn của người dùng.
+// The analytics section starts collapsed to leave room for the video table; the user's choice is remembered.
 try {
   $("#analysis").open = localStorage.getItem("analysis-open") === "1";
 } catch {}

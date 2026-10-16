@@ -1,4 +1,4 @@
-"""Biểu tượng ở khay hệ thống (góc phải thanh taskbar) thay cho cửa sổ console."""
+"""System tray icon (right side of the taskbar) in place of a console window."""
 import os
 import webbrowser
 
@@ -13,7 +13,7 @@ _icon = None
 
 
 def notify(message, title=APP_NAME):
-    """Bóng thông báo từ khay (cảnh báo kênh). Im lặng nếu chưa có khay: chạy NO_TRAY, kiểm thử."""
+    """Tray balloon notification (channel alerts). Silent when there is no tray: NO_TRAY runs, tests."""
     icon = _icon
     if icon is None:
         return
@@ -24,7 +24,7 @@ def notify(message, title=APP_NAME):
 
 
 def run_tray(url, on_quit, first_run_notice=True):
-    """Chạy biểu tượng khay (chặn luồng chính cho đến khi người dùng chọn Tắt tool)."""
+    """Run the tray icon (blocks the main thread until the user picks the quit menu item)."""
 
     def quit_(icon, _item):
         icon.visible = False

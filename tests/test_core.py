@@ -15,10 +15,10 @@ if str(ROOT) not in sys.path:
 
 
 def _fresh_db(name):
-    """Trỏ db sang thư mục trống riêng của test và khởi tạo."""
+    """Point db at an empty folder private to the test and initialise it."""
     import db as dbmod
 
-    # Thư mục riêng cho từng test: kết nối của db không đóng ngay nên Windows không xóa được DB cũ.
+    # A separate folder per test: db connections are not closed immediately, so Windows cannot delete the old DB.
     data = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=DATA))
     dbmod.DB_PATH = data / "data.db"
     dbmod.init()
@@ -26,7 +26,7 @@ def _fresh_db(name):
 
 
 def _make_scraper():
-    """Scraper có hàng đợi và khóa thật nhưng không chạy luồng nền, không mở trình duyệt."""
+    """A Scraper with a real queue and lock, but no background threads and no browser."""
     from scraper import Scraper
 
     scraper = Scraper.__new__(Scraper)
@@ -53,7 +53,7 @@ def _wait_until(condition, timeout=10):
 
 
 def _run_worker(scraper, condition):
-    """Chạy vòng _run thật (bỏ qua nhịp nghỉ 1,5 giây) cho đến khi điều kiện đúng."""
+    """Run the real _run loop (skipping the 1.5 s pause) until the condition holds."""
     with mock.patch("time.sleep", lambda seconds: None):
         threading.Thread(target=scraper._run, daemon=True).start()
         return _wait_until(lambda: condition() and scraper.current is None)
@@ -137,7 +137,7 @@ class DbTest(unittest.TestCase):
             )
         ]
         self.assertEqual(names, ["alerts", "channels", "settings", "snapshots", "videos"])
-        # Lần cập nhật sau của cùng video giữ lại số view trước đó để tính mức tăng.
+        # A later update of the same video keeps the previous view count so the increase can be computed.
         self.assertEqual(db.list_videos("demo_user")[0]["prev_play"], 100)
 
     def test_keys_are_case_insensitive_and_unique_id_keeps_case(self):
@@ -177,7 +177,7 @@ class DbTest(unittest.TestCase):
         db = _fresh_db("snapshot")
         db.add_channels(["demo"])
         db.finish_scan("demo", [_video("a", play=100), _video("b", play=50)], full=False)
-        # Lần quét nhanh chỉ thấy một video nhưng tổng view vẫn là của cả kênh.
+        # A quick scan sees only one video, but total views still cover the whole channel.
         db.finish_scan("demo", [_video("a", play=120)], full=False)
         row = db.list_channels()[0]
         self.assertEqual(row["total_views"], 170)
@@ -240,7 +240,7 @@ class SchemaVersionTest(unittest.TestCase):
         db.add_channels(["demo"])
         db.list_channels()
         db.get_settings()
-        shutil.rmtree(db.DB_PATH.parent)  # trên Windows sẽ PermissionError nếu còn kết nối mở
+        shutil.rmtree(db.DB_PATH.parent)  # on Windows this raises PermissionError if a connection is still open
 
     def test_new_and_legacy_databases_reach_the_same_version(self):
         import sqlite3
@@ -292,9 +292,9 @@ class SchemaVersionTest(unittest.TestCase):
 
         db = _fresh_db("backup-daily")
         db.add_channels(["demo"])
-        db.init()  # có DB và chưa có bản sao lưu nào: tạo một bản
+        db.init()  # a DB exists and there is no backup yet: create one
         self.assertEqual(len(db.list_backups()), 1)
-        db.init()  # vừa sao lưu xong: không tạo thêm
+        db.init()  # just backed up: do not create another
         self.assertEqual(len(db.list_backups()), 1)
         for i in range(10):
             path = db.backup_now(f"t{i}")
@@ -406,7 +406,7 @@ class QueueTest(unittest.TestCase):
 
         s._scrape = scrape
         s.enqueue(["demo"], {"mode": "quick"})
-        # Dừng worker trước khi nó nhặt job vừa xếp: chỉ cần xem trạng thái ngay sau job đầu.
+        # Stop the worker before it picks up the job just queued: only the state right after the first job matters.
         gate = threading.Event()
         real_set_status = self.db.set_status
 
@@ -560,7 +560,7 @@ class ScrapeTest(unittest.TestCase):
         self.assertEqual(db.get_channel("demo")["message"], "")
 
     def test_limit_counts_pinned_videos_extra(self):
-        # Ba video ghim cũ nằm đầu danh sách: dừng ở limit + 3 để vẫn thấy video mới nhất.
+        # Three old pinned videos sit at the top of the list: stop at limit + 3 so the newest video is still seen.
         pinned = [("p1", 10, 1), ("p2", 11, 1), ("p3", 12, 1)]
         page = _Page([
             _item_list(*pinned, ("n2", 500, 1), has_more=True),
@@ -589,7 +589,7 @@ class ScrapeTest(unittest.TestCase):
         db, _ = _scrape("full-ok", _Page([_item_list(("1", 100, 1))]), {"mode": "scan"}, seed)
         self.assertEqual([v["id"] for v in db.list_videos("demo")], ["1"])
         self.assertIsNotNone(db.get_channel("demo")["full_scan_at"])
-        # Quét dở (còn has_more nhưng TikTok ngừng trả thêm): không được xóa video cũ.
+        # Incomplete scan (has_more is still set but TikTok stops returning more): old videos must not be deleted.
         pages = [_item_list(("1", 100, 1), has_more=True)]
         db, _ = _scrape("full-partial", _Page(pages), {"mode": "scan"}, seed)
         self.assertEqual({v["id"] for v in db.list_videos("demo")}, {"1", "gone"})
@@ -787,7 +787,7 @@ class _WindowContext:
 
 
 class _SolvablePage(_Page):
-    """Trang có captcha; người dùng "giải" ngay khi cửa sổ được đưa lên màn hình."""
+    """The page has a captcha; the user "solves" it as soon as the window is brought on screen."""
     html = '<div id="captcha-container"></div>'
 
     def __init__(self, payloads=(), solves=True):
@@ -827,7 +827,7 @@ class ManualCaptchaTest(unittest.TestCase):
         self.assertFalse(scraper._wait_captcha_solved(page, "demo"))
         self.assertEqual(page.moves, [True, False])
         self.assertFalse(scraper._wait_captcha_solved(page, "demo"))
-        self.assertEqual(page.moves, [True, False])  # không bật cửa sổ lần nữa trong thời gian nghỉ
+        self.assertEqual(page.moves, [True, False])  # the window is not shown again during the cooldown
 
     def test_no_wait_when_window_cannot_be_moved(self):
         scraper = _make_scraper()
@@ -916,7 +916,7 @@ class InstanceLockTest(unittest.TestCase):
             out = subprocess.run(
                 [sys.executable, "-c", probe, str(data)],
                 cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
-                # Tiến trình con in tiếng Việt: ép UTF-8 để không phụ thuộc bảng mã mặc định của máy/CI.
+                # The child process prints Vietnamese: force UTF-8 so the result does not depend on the machine/CI default encoding.
                 env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
             ).stdout
             self.assertTrue(out.startswith("busy"), out)
@@ -951,7 +951,7 @@ class ApiTest(unittest.TestCase):
         listing = client.get("/api/channels").json()
         self.assertEqual([c["username"] for c in listing["channels"]], ["demo", "other"])
         self.assertEqual(listing["worker"], {"queue": 2, "current": None})
-        # Kênh không có trong danh sách bị bỏ qua; job là bắt buộc.
+        # Channels not in the list are skipped; a job is required.
         res = client.post("/api/channels/refresh", json={"usernames": ["Demo", "ghost"], "job": {"mode": "scan"}})
         self.assertEqual(res.json(), {"queued": 1})
         self.assertEqual(client.post("/api/channels/refresh", json={"usernames": ["demo"]}).status_code, 422)
@@ -1071,7 +1071,7 @@ if __name__ == "__main__":
 
 
 class StaticAssetsTest(unittest.TestCase):
-    """Trang tĩnh không được trỏ tới file không tồn tại (logo, script) hay liên kết ngoài lạ."""
+    """Static pages must not point to missing files (logo, script) or unexpected external links."""
 
     def test_referenced_static_files_exist(self):
         import re
@@ -1079,7 +1079,7 @@ class StaticAssetsTest(unittest.TestCase):
         for page in ("index.html", "videos.html"):
             html = (static / page).read_text(encoding="utf-8")
             for ref in re.findall(r'(?:src|href)="/static/([^"]+)"', html):
-                self.assertTrue((static / ref).is_file(), f"{page} trỏ tới /static/{ref} không tồn tại")
+                self.assertTrue((static / ref).is_file(), f"{page} points to /static/{ref}, which does not exist")
 
     def test_external_links_only_to_project_repo(self):
         import re

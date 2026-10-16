@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/extra.css">
   <script>
-    // Áp chủ đề trước khi vẽ để không bị nháy sáng/tối.
+    // Apply the theme before first paint to avoid a light/dark flash.
     try {
       const t = localStorage.getItem("theme");
       if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;

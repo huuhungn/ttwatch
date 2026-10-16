@@ -1,7 +1,7 @@
-"""Lấy dữ liệu TikTok bằng trình duyệt thật (Playwright, sync API, chạy trong 1 thread riêng).
+"""Fetch TikTok data with a real browser (Playwright sync API, run in a dedicated thread).
 
-TikTok chặn chế độ headless khi tải danh sách video, nên luôn chạy trình duyệt có cửa sổ;
-chế độ "ẩn" chỉ là đẩy cửa sổ ra ngoài màn hình.
+TikTok blocks headless mode when loading the video list, so the browser always runs with a window;
+the "hidden" mode just moves the window off screen.
 """
 import json
 import queue
@@ -27,15 +27,15 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 
 
 
-# --- Nhập liệu chịu văn bản dán, thử lại lỗi tạm, đọc dữ liệu chịu điều hướng ---------------------
+# --- Input tolerant of pasted text, retries for transient errors, reads that survive navigation ---
 ZERO_WIDTH_RE = re.compile("[\u200b\u200c\u200d\u2060\ufeff]")
 WRAP_OPEN = "([{<\"'\u201c\u2018\u00ab"
 WRAP_CLOSE = ")]}>\"'\u201d\u2019\u00bb"
 TRAILING_PUNCT = "!?:\u2026"
 CAPTCHA_UNSOLVED = ("Bị captcha – chưa giải được. Quét lại để tool hiện cửa sổ trình duyệt cho bạn giải "
                     "(hoặc bật 'Hiện cửa sổ trình duyệt' trong Cài đặt)")
-# Lỗi tạm thời (mạng chậm, TikTok chuyển trang, trình duyệt bị đóng) được quét lại sau
-# các khoảng chờ trong Scraper.RETRY_DELAYS; lỗi cố định thì báo ngay.
+# Transient errors (slow network, TikTok navigating away, browser closed) are retried after
+# the delays in Scraper.RETRY_DELAYS; permanent errors are reported immediately.
 TRANSIENT_MARKERS = (
     "timeout",
     "timed out",
@@ -46,11 +46,11 @@ TRANSIENT_MARKERS = (
 
 
 class CaptchaSolved(Exception):
-    """Người dùng vừa giải captcha giữa chừng: quét lại kênh từ đầu với phiên đã được xác minh."""
+    """The user just solved a captcha mid-scan: rescan the channel from the start with the verified session."""
 
 
 class ProfileBusyError(RuntimeError):
-    """Profile trình duyệt đang bị process khác giữ: thử lại ngay không có ích."""
+    """The browser profile is held by another process: retrying right away would not help."""
 
 
 def _first_line(exc):
@@ -59,7 +59,7 @@ def _first_line(exc):
 
 
 def _notify_tray_text(text, title="Cảnh báo kênh TikTok"):
-    """Hiện bóng thông báo ở khay nếu khay đang chạy (không tự import tray để khỏi kéo pystray vào)."""
+    """Show a tray balloon if the tray is running (tray is not imported here, to avoid pulling in pystray)."""
     tray = sys.modules.get("tray")
     if text and tray is not None:
         tray.notify(text, title)
@@ -77,10 +77,10 @@ def _is_transient(exc):
 
 
 def _evaluate_after_navigation(page, script):
-    """Chạy JS; nếu TikTok chuyển trang giữa chừng thì chờ trang mới và trả None.
+    """Run JS; if TikTok navigates away midway, wait for the new page and return None.
 
-    Gọi thẳng page.evaluate thì "Execution context was destroyed" làm cả kênh thành lỗi;
-    trả None để vòng lặp bên ngoài tự thử lại.
+    Calling page.evaluate directly would turn "Execution context was destroyed" into a channel error;
+    returning None lets the outer loop retry on its own.
     """
     try:
         return page.evaluate(script)
@@ -96,7 +96,7 @@ def _evaluate_after_navigation(page, script):
 
 
 def _clean_token(tok):
-    """Bỏ nhiễu khi dán: ký tự rộng 0, @ toàn chiều rộng, ngoặc/nháy bao quanh, dấu câu cuối."""
+    """Strip paste noise: zero-width characters, full-width @, surrounding brackets/quotes, trailing punctuation."""
     tok = ZERO_WIDTH_RE.sub("", tok).replace("\uff20", "@")
     tok = tok.lstrip(WRAP_OPEN)
     if tok.startswith("@") or "tiktok.com" in tok.lower():
@@ -118,7 +118,7 @@ def resolve_short_url(url):
 
 
 def parse_input(text):
-    """Tách text thành danh sách username. Trả về (usernames, invalid_tokens)."""
+    """Split text into a list of usernames. Returns (usernames, invalid_tokens)."""
     tokens = re.split(r"[\s,;]+", (text or "").strip())
     found, invalid = [], []
     seen = set()
@@ -148,8 +148,8 @@ def parse_input(text):
 
 class Scraper:
     RETRY_DELAYS = (5, 15)
-    CAPTCHA_WAIT_STEPS = 90        # x 2 giây = chờ người dùng giải captcha tối đa 3 phút
-    CAPTCHA_COOLDOWN = 600         # sau khi bỏ cuộc, 10 phút không bật cửa sổ lại để khỏi làm phiền
+    CAPTCHA_WAIT_STEPS = 90        # x 2 s = wait up to 3 minutes for the user to solve the captcha
+    CAPTCHA_COOLDOWN = 600         # after giving up, do not pop the window up again for 10 minutes
 
     def __init__(self):
         self.jobs = queue.Queue()
@@ -165,23 +165,23 @@ class Scraper:
 
 
     def enqueue(self, usernames, job=None):
-        """job: {"mode": "quick"} = thông tin kênh + video mới nhất,
-        {"mode": "scan", "limit": N, "since": ts, "until": ts} = cuộn kênh để lấy video
-        (limit/since/until = 0 nghĩa là không giới hạn; cả 3 đều 0 = quét toàn bộ),
-        {"mode": "videos", "ids": [...]} = cập nhật số liệu của từng video cụ thể."""
+        """job: {"mode": "quick"} = channel info + latest videos,
+        {"mode": "scan", "limit": N, "since": ts, "until": ts} = scroll the channel to collect videos
+        (limit/since/until = 0 means unlimited; all three 0 = full scan),
+        {"mode": "videos", "ids": [...]} = refresh the stats of specific videos."""
         job = normalize_job(job)
         added = 0
         with self.lock:
             running = self.current["username"] if self.current else None
             for u in usernames:
                 key = u.lower()
-                # Job video có hàng đợi riêng (khóa key#videos) để không đè job quét kênh.
+                # Video jobs have their own queue slot (key#videos) so they do not overwrite a channel scan job.
                 qkey = f"{key}#videos" if job["mode"] == "videos" else key
                 prev = self.pending.get(qkey)
                 new = job
                 if job["mode"] == "videos" and prev:
                     new = {"mode": "videos", "ids": list(dict.fromkeys(prev["ids"] + job["ids"]))}
-                # Job y hệt, hoặc job nhanh khi đã có job chờ: không xếp thêm.
+                # Identical job, or a quick job while one is already pending: do not queue another.
                 elif prev == job or (prev is not None and job["mode"] == "quick"):
                     continue
                 if prev is None:
@@ -216,13 +216,13 @@ class Scraper:
             finally:
                 with self.lock:
                     self.current = None
-                    # Có job mới được xếp cho kênh này trong lúc đang chạy: trả về trạng thái chờ.
+                    # A new job was queued for this channel while it was running: put it back in the queued state.
                     if key in self.pending or f"{key}#videos" in self.pending:
                         db.set_status(key, "queued")
             time.sleep(1.5)
 
     def _execute(self, key, job):
-        """Chạy một job; lỗi tạm thời được thử lại, lỗi khác báo ngay."""
+        """Run one job; transient errors are retried, other errors are reported immediately."""
         attempts = len(self.RETRY_DELAYS) + 1
         for attempt in range(1, attempts + 1):
             try:
@@ -236,7 +236,7 @@ class Scraper:
                     try:
                         _notify_tray(insights.check_alerts(key))
                     except Exception:
-                        traceback.print_exc()  # cảnh báo hỏng không được làm hỏng lần quét
+                        traceback.print_exc()  # a failing alert must not fail the scan
                 return
             except CaptchaSolved:
                 if attempt < attempts:
@@ -268,7 +268,7 @@ class Scraper:
             if time.time() - last >= minutes * 60:
                 cfg = db.get_settings()
                 if insights.in_quiet_hours(time.localtime().tm_hour, cfg.get("quiet_start"), cfg.get("quiet_end")):
-                    continue  # giữ nguyên mốc: hết giờ yên lặng sẽ chạy ngay ở vòng kiểm tra kế tiếp
+                    continue  # keep the timestamp: once quiet hours end it runs on the next check
                 last = time.time()
                 self.enqueue(db.all_usernames(), insights.auto_job(cfg.get("auto_refresh_mode")))
 
@@ -419,7 +419,7 @@ class Scraper:
                     return True
                 return bool(since and tail_time and tail_time < since)
 
-            # Chờ trang kênh tự gọi API danh sách video (tối đa 30 x 500ms).
+            # Wait for the channel page to call the video-list API itself (up to 30 x 500 ms).
             for _ in range(30):
                 page.wait_for_timeout(500)
                 collect()
@@ -510,7 +510,7 @@ class Scraper:
         db.set_status(key, "done", note)
 
     def _window_to(self, page, onscreen):
-        """Đưa cửa sổ trình duyệt lên màn hình hoặc cất ra ngoài; False nếu trình duyệt không cho đổi."""
+        """Move the browser window on screen or park it off screen; False if the browser refuses."""
         try:
             cdp = page.context.new_cdp_session(page)
             try:
@@ -524,11 +524,11 @@ class Scraper:
             return False
 
     def _wait_captcha_solved(self, page, key):
-        """Hiện cửa sổ (nếu đang ẩn), báo ở khay và chờ người dùng giải captcha. True nếu captcha đã hết.
+        """Show the window (if hidden), notify via the tray and wait for the user to solve the captcha. True if the captcha is gone.
 
-        Phiên đã xác minh nằm trong hồ sơ trình duyệt nên không phải giải lại ở các lần sau. Bỏ cuộc
-        thì nghỉ CAPTCHA_COOLDOWN giây trước khi hiện cửa sổ lần nữa (tự cập nhật ban đêm không bật
-        cửa sổ liên tục).
+        The verified session is kept in the browser profile, so it does not have to be solved again later.
+        After giving up, wait CAPTCHA_COOLDOWN seconds before showing the window again (overnight
+        auto-refresh must not keep popping the window up).
         """
         if time.time() - self._captcha_gave_up < self.CAPTCHA_COOLDOWN:
             return False

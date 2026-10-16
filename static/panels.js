@@ -1,5 +1,5 @@
-// Các màn hình: tab, tổng quan, cảnh báo, chi tiết kênh, so sánh, chế độ xem,
-// nhập file, bảng lệnh, trợ giúp phím tắt. Dùng chung `table`, `load`, `refresh`… của main.js.
+// Screens: tabs, overview, alerts, channel detail, compare, saved views,
+// file import, command palette, shortcut help. Shares `table`, `load`, `refresh`… from main.js.
 
 const rowOf = (u) => rowsNow().find((c) => c.username === u);
 const displayName = (c) => "@" + (c.unique_id || c.username);
@@ -7,7 +7,7 @@ const plainNf = (n) => Charts.full(n);
 const typing = (e) => !!e.target.closest?.("input, textarea, select, [contenteditable]");
 const dialogOpen = () => !!document.querySelector("dialog[open]");
 
-// ---------------------------------------------------------------- tab
+// ---------------------------------------------------------------- tabs
 
 const TABS = ["channels", "overview", "alerts"];
 let currentTab = "channels";
@@ -27,7 +27,7 @@ function showTab(name) {
 }
 document.querySelectorAll(".tab").forEach((b) => {
   b.onclick = () => showTab(b.dataset.tab);
-  // Mẫu tab của WAI-ARIA: mũi tên đổi tab, chỉ tab đang chọn nằm trong thứ tự Tab.
+  // WAI-ARIA tabs pattern: arrow keys switch tabs, only the selected tab is in the Tab order.
   b.addEventListener("keydown", (e) => {
     const i = TABS.indexOf(b.dataset.tab);
     const next = e.key === "ArrowRight" ? (i + 1) % TABS.length : e.key === "ArrowLeft" ? (i + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
@@ -38,7 +38,7 @@ document.querySelectorAll(".tab").forEach((b) => {
   });
 });
 
-// ---------------------------------------------------------------- tổng quan
+// ---------------------------------------------------------------- overview
 
 const ovState = { win: "d7", metric: "followers" };
 let ovTimer = null;
@@ -130,7 +130,7 @@ $("#pane-overview").addEventListener("click", (e) => {
   if (m) { ovState.metric = m.dataset.metric; renderOverview(); }
 });
 
-// ---------------------------------------------------------------- cảnh báo
+// ---------------------------------------------------------------- alerts
 
 let alertState = { unread: 0, seen: null };
 
@@ -176,7 +176,7 @@ $("#pane-alerts").addEventListener("click", async (e) => {
   }
 });
 
-// ---------------------------------------------------------------- chi tiết kênh (drawer)
+// ---------------------------------------------------------------- channel detail (drawer)
 
 const dr = { username: null, days: 30, metric: "followers", stop: null };
 const METRIC_LABEL = { followers: "Follow", likes: "Lượt thích", total_views: "Tổng view", video_count: "Số video" };
@@ -192,7 +192,7 @@ function openDrawer(target) {
   requestAnimationFrame(() => {
     $("#drawerShade").classList.add("on");
     $("#drawer").classList.add("on");
-    // Focus vào ngăn ngay (không đợi dữ liệu tải xong) để bàn phím không kẹt ở bảng phía sau.
+    // Focus the drawer right away (don't wait for data to load) so the keyboard doesn't stay stuck in the table behind it.
     $("#drawer").focus({ preventScroll: true });
   });
   $("#drawer").setAttribute("aria-hidden", "false");
@@ -207,7 +207,7 @@ function closeDrawer() {
   $("#drawerShade").classList.remove("on");
   $("#drawer").setAttribute("aria-hidden", "true");
   setTimeout(() => !dr.username && ($("#drawerShade").hidden = true), 220);
-  // Trả focus về chỗ người dùng đang đứng trước khi mở (bàn phím/đọc màn hình không bị mất vị trí).
+  // Return focus to where the user was before opening (keyboard and screen-reader users don't lose their place).
   if (drawerReturnFocus?.isConnected) drawerReturnFocus.focus?.();
   drawerReturnFocus = null;
 }
@@ -291,7 +291,7 @@ $("#drawer").addEventListener("click", (e) => {
   if (d) { dr.days = +d.dataset.ddays; paintDrawer(); }
 });
 $("#drawer").tabIndex = -1;
-// Giữ Tab trong drawer khi nó đang mở (aria-modal).
+// Keep Tab inside the drawer while it is open (aria-modal).
 $("#drawer").addEventListener("keydown", (e) => {
   if (e.key !== "Tab") return;
   const f = [...$("#drawer").querySelectorAll("button, a[href], input, select, [tabindex]:not([tabindex='-1'])")].filter((x) => !x.disabled && x.offsetParent !== null);
@@ -301,7 +301,7 @@ $("#drawer").addEventListener("keydown", (e) => {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 });
 
-// ---------------------------------------------------------------- so sánh
+// ---------------------------------------------------------------- compare
 
 const cmp = { users: [], metric: "followers", days: 30, pct: false, stop: null };
 
@@ -355,7 +355,7 @@ $("#dlgCompare").addEventListener("click", (e) => {
 $("#cmpClose").onclick = () => $("#dlgCompare").close();
 $("#dlgCompare").addEventListener("close", () => { cmp.stop?.(); cmp.stop = null; });
 
-// ---------------------------------------------------------------- chế độ xem đã lưu
+// ---------------------------------------------------------------- saved views
 
 function currentView() {
   return {
@@ -385,7 +385,7 @@ async function loadViews() {
 }
 
 $("#btnViews").onclick = async (e) => {
-  const r = e.currentTarget.getBoundingClientRect(); // trước await: sau đó currentTarget là null
+  const r = e.currentTarget.getBoundingClientRect(); // before the await: currentTarget is null afterwards
   await loadViews();
   const items = [{ header: "Chế độ xem" }];
   if (!savedViews.length) items.push({ icon: "", label: "(chưa có chế độ xem nào)", disabled: true, action() {} });
@@ -415,7 +415,7 @@ $("#btnViews").onclick = async (e) => {
   ContextMenu.show(r.left, r.bottom + 4, items);
 };
 
-// ---------------------------------------------------------------- nhập file
+// ---------------------------------------------------------------- file import
 
 const importScan = mountScanOptions($("#importScan"), "scan-import");
 const importDetect = () => {
@@ -475,7 +475,7 @@ $("#importOk").onclick = async () => {
   }
 };
 
-// ---------------------------------------------------------------- bảng lệnh
+// ---------------------------------------------------------------- command palette
 
 const fold = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
 
@@ -551,7 +551,7 @@ $("#btnPalette").onclick = openPalette;
 $("#btnHelp").onclick = () => $("#dlgHelp").showModal();
 $("#helpClose").onclick = () => $("#dlgHelp").close();
 
-// ---------------------------------------------------------------- phím tắt toàn cục
+// ---------------------------------------------------------------- global shortcuts
 
 $("#btnRetryInterrupted").onclick = () => {
   const stuck = rowsNow().filter((c) => c.status === "error" && (c.message || "").startsWith("Bị dừng"));
@@ -570,7 +570,7 @@ addEventListener("keydown", (e) => {
   }
   if (typing(e) || dialogOpen() || paletteEl || e.ctrlKey || e.metaKey || e.altKey) return;
   if ((e.key === "ArrowDown" || e.key === "ArrowUp") && currentTab === "channels" && !dr.username && (e.target === document.body || e.target.closest?.('[role="tab"], #table'))) {
-    // Chọn dòng bằng mũi tên (bàn phím thuần): Shift giữ vùng chọn như Shift+click.
+    // Select rows with the arrow keys (keyboard only): Shift extends the selection like Shift+click.
     const view = table.view;
     if (!view.length) return;
     e.preventDefault();
@@ -591,7 +591,7 @@ addEventListener("keydown", (e) => {
   else if (e.key === "3") showTab("alerts");
 });
 
-// ---------------------------------------------------------------- khởi động
+// ---------------------------------------------------------------- startup
 
 addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 loadViews();

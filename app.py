@@ -120,7 +120,7 @@ def channel_videos(username: str):
 
 @app.post("/api/open")
 def open_urls(req: OpenReq):
-    """Mở nhiều tab cùng lúc bằng trình duyệt mặc định (trình duyệt web chặn mở nhiều popup)."""
+    """Open several tabs at once in the default browser (a web page cannot open many popups)."""
     for u in req.urls[:100]:
         if u.startswith("https://www.tiktok.com/") or u.startswith(f"http://{HOST}:{PORT}/"):
             webbrowser.open_new_tab(u)
@@ -140,7 +140,7 @@ def set_settings(values: dict):
 
 
 
-# ---------------------------------------------------------------- API lịch sử, tổng quan, cảnh báo, nhập/xuất
+# ---------------------------------------------------------------- API: history, overview, alerts, import/export
 
 def _need_channel(username):
     if not db.channel_exists(username.lower()):
@@ -222,7 +222,7 @@ class ImportReq(BaseModel):
 
 @app.post("/api/import/channels")
 async def import_channels(req: ImportReq):
-    """Nhập danh sách kênh. Có dòng tiêu đề CSV (username,group,note) thì lấy cả nhóm và ghi chú."""
+    """Import a channel list. With a CSV header row (username,group,note), group and note are imported too."""
     rows = list(csv.reader(io.StringIO(req.text)))
     head = [h.strip().lower() for h in rows[0]] if rows else []
     is_csv = bool(head) and head[0] in ("username", "user", "kênh", "kenh", "channel", "link", "url")
@@ -267,7 +267,7 @@ def backups():
 
 @app.get("/api/export/backup")
 def export_backup():
-    """Bản sao nhất quán của toàn bộ DB (kênh, video, lịch sử, cài đặt)."""
+    """Consistent copy of the whole DB (channels, videos, history, settings)."""
     tmp = Path(tempfile.mkdtemp(prefix="ttwatch-")) / "data.db"
     src = sqlite3.connect(db.DB_PATH, timeout=30)
     try:
@@ -358,7 +358,7 @@ def export_videos(username: str):
 
 
 def _csv_cell(value):
-    # Ô văn bản bắt đầu bằng = + - @ bị bảng tính hiểu là công thức; số giữ nguyên.
+    # Spreadsheets treat text cells starting with = + - @ as formulas; numbers are left as is.
     if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
         return "'" + value
     return value
@@ -411,7 +411,7 @@ server: uvicorn.Server = None
 def shutdown():
     if server:
         server.should_exit = True
-    # Chờ một chút để phản hồi HTTP kịp gửi đi rồi mới thoát hẳn process.
+    # Wait briefly so the HTTP response is sent before the process exits for good.
     threading.Timer(1.5, lambda: os._exit(0)).start()
 
 
@@ -424,17 +424,17 @@ def api_shutdown():
 def main():
     global PORT, scraper, server, _instance
     open_browser = not os.environ.get("NO_OPEN")
-    # Đã có bản khác của tool đang chạy (cùng thư mục dữ liệu mặc định): chỉ mở lại trang,
-    # không chạy thêm bản thứ hai để tránh tranh nhau trình duyệt và database.
-    # Đặt TDK_DATA_DIR (chạy riêng, kiểm thử) thì bỏ qua bước này.
+    # Another copy of the tool is already running (same default data folder): just reopen the page
+    # instead of starting a second copy that would fight over the browser and the database.
+    # Skipped when TDK_DATA_DIR is set (separate run, tests).
     for port in ([] if os.environ.get("TDK_DATA_DIR") else range(8765, 8775)):
         if _is_our_tool(port):
             print(f"{APP_NAME} đang chạy sẵn tại http://{HOST}:{port} – đang mở lại trang...")
             if open_browser:
                 webbrowser.open(f"http://{HOST}:{port}")
             return
-    # Hai bản dùng chung một thư mục dữ liệu sẽ tranh nhau profile trình duyệt và ghi đè
-    # trạng thái kênh của nhau, kể cả khi đang ở hai cổng khác nhau.
+    # Two copies sharing one data folder would fight over the browser profile and overwrite
+    # each other's channel state, even when they listen on different ports.
     try:
         _instance = instance_lock.acquire(DATA_DIR)
     except instance_lock.AlreadyRunning as exc:
@@ -449,7 +449,7 @@ def main():
     scraper = Scraper()
     url = f"http://{HOST}:{PORT}"
     print(f"{APP_NAME} đang chạy tại: {url}\nDữ liệu lưu tại: {DATA_DIR}")
-    # Tắt log truy cập; chỉ giữ cảnh báo.
+    # Disable the access log; keep warnings only.
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="warning",
                                            loop="asyncio", http="h11", ws="none", log_config=None))
     threading.Thread(target=server.run, daemon=True).start()
@@ -472,7 +472,7 @@ def main():
 
 if __name__ == "__main__":
     if sys.stdout is None:
-        # Chạy bằng exe không có console: ghi mọi thứ in ra vào log.txt cạnh dữ liệu.
+        # Running as an exe without a console: write all printed output to log.txt next to the data.
         log_path = DATA_DIR / "log.txt"
         too_big = log_path.exists() and log_path.stat().st_size > 2000000
         log = open(log_path, "w" if too_big else "a", encoding="utf-8", buffering=1)

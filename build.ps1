@@ -1,26 +1,26 @@
-﻿# Đóng gói thành một thư mục chạy được bằng PyInstaller.
-# Chạy: powershell -File build.ps1
-# Cần: .venv đã cài requirements.txt và `uv` trong PATH. PyInstaller được cài riêng vào venv
-# (không nằm trong requirements.txt vì chỉ cần khi đóng gói).
+﻿# Package the app as a runnable folder with PyInstaller.
+# Run: powershell -File build.ps1
+# Needs: a .venv with requirements.txt installed and `uv` on PATH. PyInstaller is installed
+# into the venv separately (not in requirements.txt because it is only needed for packaging).
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 $py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 
-# Thăm dò bằng lệnh native: tạm hạ ErrorActionPreference vì PowerShell 5.1 coi stderr là lỗi.
+# Probe with a native command: temporarily lower ErrorActionPreference because PowerShell 5.1 treats stderr as an error.
 $ErrorActionPreference = "Continue"
 & $py -c "import PyInstaller" 2>$null
 $have = ($LASTEXITCODE -eq 0)
 $ErrorActionPreference = "Stop"
 if (-not $have) {
     uv pip install --python $py pyinstaller
-    if ($LASTEXITCODE -ne 0) { throw "Không cài được PyInstaller" }
+    if ($LASTEXITCODE -ne 0) { throw "Could not install PyInstaller" }
 }
 
 & $py -m PyInstaller --noconfirm --clean --windowed --name ttwatch `
     --add-data "static;static" `
     --collect-submodules uvicorn --collect-submodules pystray `
     app.py
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller thất bại" }
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
-Write-Host "Xong: dist\ttwatch\ttwatch.exe"
-Write-Host "Trình duyệt: tool dùng Edge/Chrome có sẵn của máy; nếu không có, cần chạy 'playwright install chromium' trên máy đích."
+Write-Host "Done: dist\ttwatch\ttwatch.exe"
+Write-Host "Browser: the tool uses the Edge/Chrome already on the machine; if there is none, run 'playwright install chromium' on the target machine."
