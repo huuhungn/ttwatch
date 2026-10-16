@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: read  # SignPath đọc thông tin job và tải artifact
 
 jobs:
   build:
@@ -37,6 +38,41 @@ jobs:
           --add-data "static;static"
           --collect-submodules uvicorn --collect-submodules pystray
           app.py
+
+      # Ký số bằng SignPath Foundation (miễn phí cho mã nguồn mở). Chỉ chạy khi build từ tag và repo đã
+      # khai báo biến SIGNPATH_ORGANIZATION_ID + secret SIGNPATH_API_TOKEN; chưa có thì exe giữ nguyên chưa ký.
+      # Cách thiết lập: docs/code-signing.md. Ký trước khi chạy thử để thử đúng file sẽ phát hành.
+      - name: Tải exe chưa ký lên để ký
+        id: upload-unsigned
+        if: github.ref_type == 'tag' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ttwatch-unsigned-exe
+          path: dist\ttwatch\ttwatch.exe
+
+      - name: Ký số bằng SignPath
+        id: sign
+        if: github.ref_type == 'tag' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'ttwatch' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # Người phê duyệt có tối đa 1 giờ để bấm duyệt yêu cầu ký.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+
+      - name: Thay exe bằng bản đã ký và kiểm tra chữ ký
+        if: steps.sign.outcome == 'success'
+        shell: pwsh
+        run: |
+          Copy-Item signed\ttwatch.exe dist\ttwatch\ttwatch.exe -Force
+          $sig = Get-AuthenticodeSignature dist\ttwatch\ttwatch.exe
+          Write-Host "Chữ ký: $($sig.Status) – $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne "Valid") { throw "Chữ ký không hợp lệ: $($sig.Status)" }
 
       - name: Chạy thử exe vừa build (khởi động, ping, tắt)
         shell: pwsh
