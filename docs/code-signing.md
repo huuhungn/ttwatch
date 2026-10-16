@@ -10,7 +10,7 @@ Hãy tự đánh giá trung thực mục "toàn bộ mã nguồn là của độ
 
 ## Các bước (do chủ repo thực hiện, cần tài khoản của bạn)
 
-1. Bật xác thực hai lớp cho tài khoản GitHub.
+1. Xác thực hai lớp (2FA): kiểm tra ở <https://github.com/settings/security> với từng tài khoản thành viên, và bật *Require two-factor authentication* cho tổ chức `huuhungn` (Settings → Authentication security). API không cho biết 2FA cá nhân nên phải tự nhìn trên trang đó.
 2. Nộp đơn tại <https://signpath.org/apply>. Trước đó nên có sẵn mục **Code signing policy** ở README hoặc trang tải (xem mẫu bên dưới); chỉ đưa lên khi đơn được chấp nhận để khỏi ghi sai sự thật.
 3. Sau khi được duyệt, trong SignPath tạo project (slug mặc định mà workflow dùng: `ttwatch`) và signing policy `release-signing`; thêm Trusted Build System *GitHub.com* và liên kết với project; cài [SignPath GitHub App](https://github.com/apps/signpath) cho repo.
 4. Trong project, tạo *Artifact configuration* mặc định:
@@ -37,8 +37,8 @@ Hãy tự đánh giá trung thực mục "toàn bộ mã nguồn là của độ
 >
 > Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 >
-> - Committers và reviewers: _(điền thành viên)_
-> - Approvers: _(điền thành viên)_
+> - Committers và reviewers: [anhtahaylove](https://github.com/anhtahaylove)
+> - Approvers: [anhtahaylove](https://github.com/anhtahaylove)
 >
 > Chính sách riêng tư: chương trình này không gửi thông tin tới hệ thống mạng nào khác trừ khi người dùng yêu cầu rõ ràng (tool chỉ truy cập trang TikTok công khai bằng trình duyệt trên máy bạn).
 
