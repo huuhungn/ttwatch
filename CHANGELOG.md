@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-10-17
 
 ### Added
 - **Start with Windows.** A *Tự chạy cùng Windows* checkbox in *Cài đặt* (off by default) adds one per-user entry to `HKCU\...\Run`, so no administrator rights and no scheduled task are needed. Windows starts the tool with `--background`: it comes up in the tray and keeps scanning and alerting, without opening the browser page. The entry is removed when you untick the box and is repaired at the next start if the install folder was moved. If you disabled it in Task Manager → Startup apps, the setting says so and ticking the box again turns it back on; the automatic repair never overrides that choice. Only the exe can do this; from source the box is disabled with the reason (`GET`/`POST /api/autostart`, setting `autostart`).
@@ -9,6 +9,8 @@
 
 ### Changed
 - `/api/channels` and the other worker statuses carry a `pause` field (`null` when nothing is waiting out trouble).
+- Settings also store `scan_pace` and `autostart`; `POST /api/worker/resume` and `GET`/`POST /api/autostart` are new.
+- `--background` on the command line (what the Windows startup entry passes) starts the tool without opening the page, like `NO_OPEN=1`.
 
 ## 0.2.0 — 2026-10-16
 
