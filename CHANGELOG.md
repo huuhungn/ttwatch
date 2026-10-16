@@ -1,6 +1,6 @@
 # Lịch sử thay đổi
 
-## Chưa phát hành
+## 0.1.1 — 2026-10-16
 
 ### Thêm
 - Giấy phép MIT (`LICENSE`, cũng nằm trong file zip phát hành).
