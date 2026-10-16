@@ -26,8 +26,10 @@ from pydantic import BaseModel
 import db
 import insights
 import instance_lock
+import updater
 from paths import APP_NAME, DATA_DIR, STATIC_DIR as STATIC
 from scraper import Scraper, parse_input
+from version import __version__
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -35,13 +37,14 @@ APP_ID = "theo-doi-kenh-tiktok"
 _instance = None
 
 scraper: Scraper = None
-app = FastAPI(title=APP_NAME)
+updates: updater.UpdateManager = None
+app = FastAPI(title=APP_NAME, version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/api/ping")
 def ping():
-    return {"app": APP_ID}
+    return {"app": APP_ID, "version": __version__}
 
 
 class AddReq(BaseModel):
@@ -136,6 +139,68 @@ def get_settings():
 def set_settings(values: dict):
     db.set_settings(values)
     return db.get_settings()
+
+
+# ---------------------------------------------------------------- API: self-update
+
+class InstallReq(BaseModel):
+    force: bool = False
+
+
+class SkipReq(BaseModel):
+    version: str
+
+
+def _build_updates() -> updater.UpdateManager:
+    return updater.UpdateManager(
+        get_setting=db.get_setting, set_setting=db.set_settings,
+        is_idle=lambda: scraper is None or not scraper.status()["queue"],
+        notify=_tray_notice,
+        prepare_exit=lambda: scraper._close_browser() if scraper is not None else None,
+        exit_app=shutdown)
+
+
+def _updates() -> updater.UpdateManager:
+    global updates
+    if updates is None:  # only before main() ran, i.e. in tests
+        updates = _build_updates()
+    return updates
+
+
+@app.get("/api/update")
+def update_state():
+    return _updates().snapshot_full()
+
+
+@app.post("/api/update/check")
+def update_check():
+    """Check GitHub now (the background check runs on its own every few hours)."""
+    _updates().check()
+    return _updates().snapshot_full()
+
+
+@app.post("/api/update/install")
+def update_install(req: InstallReq):
+    manager = _updates()
+    if not req.force and scraper is not None and scraper.status()["queue"]:
+        raise HTTPException(409, "Tool đang quét kênh; cập nhật sẽ dừng việc quét.")
+    try:
+        manager.start_install(auto=False)
+    except updater.UpdateError as exc:
+        raise HTTPException(400, str(exc))
+    return manager.snapshot_full()
+
+
+@app.post("/api/update/skip")
+def update_skip(req: SkipReq):
+    db.set_settings({"update_skip": req.version})
+    return _updates().snapshot_full()
+
+
+@app.post("/api/update/ack")
+def update_ack():
+    _updates().acknowledge()
+    return {"ok": True}
 
 
 
@@ -421,8 +486,26 @@ def api_shutdown():
     return {"ok": True}
 
 
+def _tray_notice(text):
+    # tray is not imported here (pystray is heavy and absent in tests); notify only if it is running.
+    tray = sys.modules.get("tray")
+    if tray is not None:
+        tray.notify(text)
+
+
+def _tray_check_update():
+    """Tray menu item: check now and say what was found (runs on the tray thread)."""
+    snap = updates.check()
+    if snap["available"]:
+        _tray_notice(f"Có bản {snap['latest']} mới. Mở trang ttwatch để cập nhật.")
+    elif snap["check_error"]:
+        _tray_notice(snap["check_error"])
+    else:
+        _tray_notice(f"Bạn đang dùng bản mới nhất ({snap['current']}).")
+
+
 def main():
-    global PORT, scraper, server, _instance
+    global PORT, scraper, server, _instance, updates
     open_browser = not os.environ.get("NO_OPEN")
     # Another copy of the tool is already running (same default data folder): just reopen the page
     # instead of starting a second copy that would fight over the browser and the database.
@@ -447,6 +530,8 @@ def main():
 
     db.init()
     scraper = Scraper()
+    updates = _build_updates()
+    updates.start()
     url = f"http://{HOST}:{PORT}"
     print(f"{APP_NAME} đang chạy tại: {url}\nDữ liệu lưu tại: {DATA_DIR}")
     # Disable the access log; keep warnings only.
@@ -467,7 +552,7 @@ def main():
         threading.Event().wait()
     else:
         from tray import run_tray
-        run_tray(url, shutdown)
+        run_tray(url, shutdown, on_check_update=_tray_check_update)
 
 
 if __name__ == "__main__":

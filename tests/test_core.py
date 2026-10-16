@@ -940,7 +940,7 @@ class ApiTest(unittest.TestCase):
 
     def test_ping_identifies_the_tool(self):
         client, *_ = self._client("api-ping")
-        self.assertEqual(client.get("/api/ping").json(), {"app": "theo-doi-kenh-tiktok"})
+        self.assertEqual(client.get("/api/ping").json(), {"app": "theo-doi-kenh-tiktok", "version": __import__("version").__version__})
 
     def test_add_list_and_refresh_channels(self):
         client, db, scraper, _ = self._client("api-channels")

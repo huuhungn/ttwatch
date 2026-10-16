@@ -31,6 +31,16 @@
     <button class="btn" id="btnSettings">⚙ Cài đặt</button>
   </header>
 
+  <div class="banner update" id="updateBar" role="status" hidden>
+    <span id="updateText"></span>
+    <progress id="updateProgress" max="100" hidden></progress>
+    <span class="spacer"></span>
+    <a class="btn" id="updateNotes" target="_blank" rel="noopener">Xem thay đổi</a>
+    <button class="btn primary" id="updateNow">Cập nhật ngay</button>
+    <button class="btn" id="updateLater">Để sau</button>
+    <button class="btn" id="updateSkip" title="Không nhắc lại bản này nữa">Bỏ qua bản này</button>
+  </div>
+
   <div class="banner warn" id="bannerInterrupted" hidden>
     <span id="bannerText"></span>
     <span class="spacer"></span>
@@ -112,6 +122,21 @@
       <input type="checkbox" id="setAlertVideo">
       <label for="setAlertVideo">Cảnh báo khi kênh có video mới</label>
     </div>
+    <div class="field row">
+      <input type="checkbox" id="setUpdCheck">
+      <label for="setUpdCheck">Tự kiểm tra bản mới trên GitHub</label>
+    </div>
+    <div class="field row">
+      <input type="checkbox" id="setUpdAuto">
+      <label for="setUpdAuto">Tự cài bản mới khi tool đang rảnh</label>
+    </div>
+    <div class="field">
+      <div class="scan-opts">
+        <button class="btn" id="btnUpdCheck">Kiểm tra bản mới ngay</button>
+        <span class="muted" id="updInfo"></span>
+      </div>
+      <small>Khi cập nhật, dữ liệu của bạn được giữ nguyên và bản cũ được xóa sau khi cài xong. Tool chỉ kết nối tới GitHub để hỏi bản mới và tải bản cập nhật.</small>
+    </div>
     <div class="field">
       <label for="setTheme">Giao diện</label>
       <select id="setTheme">
@@ -154,6 +179,7 @@
 
   <dialog id="dlgAbout">
     <h3>Giới thiệu</h3>
+    <div class="field"><strong>ttwatch</strong> <span class="muted">phiên bản <span id="aboutVersion">–</span></span></div>
     <div class="field">
       <small>Công cụ theo dõi kênh TikTok công khai: số follow, tim, video và lịch sử thay đổi, lưu trên máy bạn. Không gửi dữ liệu đi đâu khác.</small>
     </div>

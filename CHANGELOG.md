@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — 2026-10-16
+
+### Added
+- **Self-update.** The exe checks the latest GitHub Release a short while after start and every 6 hours, and offers the new version in a bar under the header (*Cập nhật ngay* / *Để sau* / *Bỏ qua bản này*). By default it also installs a new version by itself when no scan is running. The package is downloaded over HTTPS, checked against its SHA256 and unpacked next to the app; the app then restarts into the new version, the old program files are deleted, and your data folder is never touched. If anything goes wrong while swapping files, the old version is put back. Turn the check or the automatic install off in *Cài đặt*, or use the tray item *Kiểm tra cập nhật*.
+- The version is shown in *Giới thiệu* and in `/api/ping`; `version.py` is the single source, and `release.yml` refuses a tag that does not match it.
+
+### Changed
+- Settings now also store `update_check`, `update_auto`, `update_skip` and `update_failed`.
+
 ## 0.1.2 — 2026-10-16
 
 ### Added

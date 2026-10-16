@@ -452,6 +452,9 @@ $("#btnSettings").onclick = async () => {
   $("#setAlertVideo").checked = s.alert_new_video !== "0";
   $("#setTheme").value = localStorage.getItem("theme") || "auto";
   $("#setDense").checked = localStorage.getItem("dense") === "1";
+  $("#setUpdCheck").checked = s.update_check !== "0";
+  $("#setUpdAuto").checked = s.update_auto !== "0";
+  renderUpdateInfo();
   api("/api/backups").then((b) => {
     const n = b.backups.length;
     $("#backupInfo").textContent = n
@@ -483,13 +486,123 @@ $("#setSave").onclick = async () => {
     alerts_enabled: $("#setAlerts").checked ? "1" : "0",
     alert_follow_pct: String(Math.max(0, parseFloat($("#setAlertPct").value) || 0)),
     alert_new_video: $("#setAlertVideo").checked ? "1" : "0",
+    update_check: $("#setUpdCheck").checked ? "1" : "0",
+    update_auto: $("#setUpdAuto").checked ? "1" : "0",
   });
   $("#dlgSettings").close();
   toast("Đã lưu cài đặt");
 };
 
+// ---------------------------------------------------------------- self-update
+
+let upd = null;
+let updVersion = null; // version of the running server; a change means the app restarted into a new build
+let updLater = false;
+let updWaiting = false; // the install was started and the server is about to restart
+
+function fmtMb(bytes) {
+  return bytes ? ` (${Math.round(bytes / 1048576)} MB)` : "";
+}
+
+function renderUpdateInfo() {
+  if (!upd) return;
+  const bits = [`Đang dùng ${upd.current}`];
+  if (upd.available) bits.push(`bản mới ${upd.latest}`);
+  else if (upd.latest) bits.push("là bản mới nhất");
+  $("#updInfo").textContent = upd.check_error || bits.join(" · ");
+  $("#aboutVersion").textContent = upd.current;
+}
+
+function renderUpdateBar() {
+  const bar = $("#updateBar");
+  if (!upd) return;
+  const working = upd.status === "downloading" || upd.status === "installing" || updWaiting;
+  const show = (upd.available && !upd.skipped && !updLater) || working;
+  bar.hidden = !show;
+  if (!show) return;
+  const prog = $("#updateProgress");
+  prog.hidden = !working;
+  for (const id of ["#updateNow", "#updateLater", "#updateSkip", "#updateNotes"]) $(id).hidden = working;
+  if (working) {
+    const downloading = upd.status === "downloading";
+    prog.value = downloading ? Math.round(upd.progress * 100) : 100;
+    $("#updateText").textContent = downloading
+      ? `Đang tải bản ${upd.latest}… ${Math.round(upd.progress * 100)}%`
+      : `Đang cài bản ${upd.latest}… tool sẽ tự mở lại trong giây lát.`;
+    return;
+  }
+  $("#updateNotes").href = upd.page;
+  const blocked = upd.can_install === false;
+  $("#updateNow").hidden = blocked;
+  $("#updateText").textContent = upd.install_error
+    ? `Cập nhật lên ${upd.latest} chưa được: ${upd.install_error}`
+    : blocked
+      ? `Có bản mới ${upd.latest}. ${upd.block_reason}`
+      : `Có bản mới ${upd.latest}${fmtMb(upd.size)}, bạn đang dùng ${upd.current}.`;
+  $("#updateNow").textContent = upd.install_error ? "Thử lại" : "Cập nhật ngay";
+}
+
+async function loadUpdate() {
+  let u;
+  try {
+    u = await api("/api/update");
+  } catch {
+    return; // the server is restarting
+  }
+  if (updVersion && u.current !== updVersion) {
+    location.reload(); // the app restarted into the new version: load its page
+    return;
+  }
+  updVersion = u.current;
+  updWaiting = false; // the server's own status takes over from the click-to-response gap
+  upd = u;
+  renderUpdateBar();
+  renderUpdateInfo();
+  if (u.last_result) {
+    toast(u.last_result.ok ? `Đã cập nhật lên bản ${u.last_result.version}` : `Cập nhật chưa thành công: ${u.last_result.message}`,
+      u.last_result.ok ? "" : "error", { ms: 8000 });
+    api("/api/update/ack", {}).catch(() => {});
+  }
+}
+
+async function installUpdate(force = false) {
+  try {
+    updWaiting = true;
+    renderUpdateBar();
+    upd = await api("/api/update/install", { force });
+    updWaiting = false;
+    renderUpdateBar();
+  } catch (e) {
+    updWaiting = false;
+    if (/đang quét/.test(e.message) && confirm(`${e.message}
+Vẫn cập nhật và dừng việc quét?`)) return installUpdate(true);
+    toast(e.message, "error");
+  }
+  loadUpdate();
+}
+
+$("#updateNow").onclick = () => installUpdate();
+$("#updateLater").onclick = () => { updLater = true; renderUpdateBar(); };
+$("#updateSkip").onclick = async () => {
+  await api("/api/update/skip", { version: upd.latest });
+  loadUpdate();
+};
+$("#btnUpdCheck").onclick = async () => {
+  $("#updInfo").textContent = "Đang kiểm tra…";
+  try {
+    upd = await api("/api/update/check", {});
+    updLater = false;
+    renderUpdateInfo();
+    renderUpdateBar();
+  } catch (e) {
+    $("#updInfo").textContent = e.message;
+  }
+};
+
 load();
 loadSparks();
+loadUpdate();
+setInterval(loadUpdate, 3000);
 setInterval(load, 2000);
 setInterval(loadSparks, 60000);
 setInterval(() => table.render(), 60000); // refresh the "x minutes ago" labels

@@ -362,6 +362,83 @@ class UiTest(unittest.TestCase):
         p.fill("#search", "Video số 7")
         p.wait_for_function("document.querySelectorAll('#table tbody tr').length === 1")
 
+    # ------------------------------------------------------------ self-update bar (the server's answer is faked)
+
+    def _fake_update(self, **over):
+        state = {"current": "0.1.2", "latest": "0.2.0", "available": True, "status": "available", "progress": 0,
+                 "check_error": None, "install_error": None, "checked_at": NOW, "skipped": False,
+                 "page": "https://github.com/huuhungn/ttwatch/releases/tag/v0.2.0", "size": 104857600,
+                 "can_install": True, "block_reason": None, "last_result": None}
+        state.update(over)
+        installs = []
+
+        def get_state(route):
+            route.fulfill(json=state)
+
+        def install(route):
+            installs.append(route.request.post_data_json)
+            state.update(status="downloading", progress=0.4)
+            route.fulfill(json=state)
+
+        self.page.route("**/api/update", get_state)
+        self.page.route("**/api/update/install", install)
+        return state, installs
+
+    def test_update_bar_offers_installs_and_can_be_dismissed(self):
+        p = self.page
+        state, installs = self._fake_update()
+        self.open_home()
+        p.wait_for_selector("#updateBar:not([hidden])")
+        text = p.locator("#updateText").inner_text()
+        self.assertIn("0.2.0", text)
+        self.assertIn("100 MB", text)
+        self.assertEqual(p.locator("#updateNotes").get_attribute("href"), state["page"])
+        p.click("#updateLater")
+        self.assertTrue(p.locator("#updateBar").is_hidden())
+        p.reload()
+        p.wait_for_selector("#updateBar:not([hidden])")  # "later" only lasts until the page is reloaded
+        p.click("#updateNow")
+        p.wait_for_function("document.querySelector('#updateText').textContent.includes('Đang tải')")
+        self.assertEqual(installs, [{"force": False}])
+        self.assertTrue(p.locator("#updateProgress").is_visible())
+        self.assertTrue(p.locator("#updateNow").is_hidden())
+
+    def test_update_bar_without_install_support_points_to_the_download(self):
+        p = self.page
+        self._fake_update(can_install=False, block_reason="Bạn đang chạy từ mã nguồn; chỉ bản exe mới tự cập nhật.")
+        self.open_home()
+        p.wait_for_selector("#updateBar:not([hidden])")
+        self.assertIn("chạy từ mã nguồn", p.locator("#updateText").inner_text())
+        self.assertTrue(p.locator("#updateNow").is_hidden())
+        self.assertTrue(p.locator("#updateNotes").is_visible())
+
+    def test_update_bar_hidden_when_up_to_date_or_skipped(self):
+        p = self.page
+        state, _ = self._fake_update(available=False, status="uptodate", latest="0.1.2")
+        self.open_home()
+        p.wait_for_function("document.querySelector('#aboutVersion').textContent === '0.1.2'")
+        self.assertTrue(p.locator("#updateBar").is_hidden())
+        state.update(available=True, latest="0.2.0", status="available", skipped=True)
+        p.wait_for_timeout(3300)
+        self.assertTrue(p.locator("#updateBar").is_hidden())
+
+    def test_update_settings_are_saved(self):
+        p = self.page
+        self._fake_update(available=False, status="uptodate", latest="0.1.2")
+        self.open_home()
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        self.assertTrue(p.locator("#setUpdCheck").is_checked())
+        self.assertTrue(p.locator("#setUpdAuto").is_checked())
+        p.uncheck("#setUpdAuto")
+        try:
+            p.click("#setSave")
+            p.wait_for_function("!document.querySelector('#dlgSettings').open")
+            self.assertEqual(self.db.get_setting("update_auto"), "0")
+            self.assertEqual(self.db.get_setting("update_check"), "1")
+        finally:
+            self.db.set_settings({"update_auto": "1"})
+
 
 if __name__ == "__main__":
     unittest.main()

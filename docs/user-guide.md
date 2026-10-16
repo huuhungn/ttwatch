@@ -71,6 +71,7 @@ Double-click a channel (or press Enter). It has summary cards, a `Phân tích` (
 - **Auto-update**: interval in minutes, type (quick or a 10-video scan) and quiet hours (may span midnight).
 - **Alerts**: on/off, follower threshold, new videos.
 - **Appearance**: light/dark/follow the system, compact table.
+- **Updates**: the tool looks for a new version on GitHub by itself. When one exists a bar appears at the top: *Cập nhật ngay* downloads, installs and restarts the tool (takes a minute or two; your data is kept and the old version is removed); *Để sau* hides the bar until you reload the page; *Bỏ qua bản này* stops reminders for that version. By default a new version is also installed automatically when no scan is running; untick *Tự cài bản mới khi tool đang rảnh* to decide yourself, or untick *Tự kiểm tra bản mới trên GitHub* to turn the check off. *Kiểm tra bản mới ngay* and the tray item *Kiểm tra cập nhật* check on demand.
 
 ## Troubleshooting
 

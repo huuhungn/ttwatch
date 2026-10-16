@@ -28,6 +28,16 @@ On another machine, just download the zip from Releases, unzip it and run `ttwat
 
 The exe is not code-signed, so Windows SmartScreen may show a warning the first time (choose *More info → Run anyway*). Compare the downloaded file with the accompanying `.sha256` file if you want to be sure.
 
+## Updates
+
+The packaged exe updates itself (since 0.2.0). A short while after start, and every 6 hours, it asks the GitHub API for the latest release of this repository; when a newer version exists it shows a bar with *Cập nhật ngay* (update now), and by default installs it on its own once no scan is running. Pushing a `v*` tag is all that is needed to publish an update: `release.yml` builds the zip that the apps download.
+
+How an update is applied: the zip is downloaded over HTTPS and its SHA256 is compared with the `.sha256` file of the same release; it is unpacked into a `.update` folder inside the install folder, the app exits, and a small PowerShell script swaps the program files (`ttwatch.exe`, `_internal`) in, deletes the old ones and starts the new exe. If a step fails the old files are restored. The data folder `TheoDoiKenhTiktok_data` is never part of the package, so it is never touched. Files you put in the install folder yourself are left alone.
+
+Before you release: bump `__version__` in `version.py` and add the `CHANGELOG.md` entry, commit, then tag `v<version>`. `release.yml` fails when the tag and `version.py` differ, because a build that reports an older version than its own release would offer to update to itself forever.
+
+Settings (*Cài đặt*): check for updates on/off, install automatically on/off. The only network traffic the updater adds is the GitHub API request and the release download. Running from source (`python app.py`) only checks and links to the release page; it never replaces files. An install folder you cannot write to (for example under `Program Files`) cannot self-update; download the new zip by hand.
+
 Since 0.1.2, every release zip comes with a provenance attestation (GitHub Artifact Attestation, signed with Sigstore). It confirms that the file was built by this repository's `release.yml` workflow from the exact commit of the tag. Verify it with the [GitHub CLI](https://cli.github.com/):
 
 ```bash
@@ -61,6 +71,7 @@ Requires `uv` on PATH; the script installs PyInstaller into `.venv` by itself. `
 | `db.py` | SQLite, versioned migrations, backups |
 | `insights.py` | history, overview, analysis, comparison, alerts, saved views |
 | `instance_lock.py` | single-instance lock on the data folder |
+| `updater.py`, `version.py` | self-update from GitHub Releases, the app version |
 | `tray.py`, `paths.py` | system tray, data paths |
 | `static/` | the UI (no npm needed): `main.js` channel table, `panels.js` the newer screens, `charts.js` SVG charts |
 

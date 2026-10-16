@@ -232,3 +232,7 @@ dialog.wide { width: min(860px, calc(100vw - 24px)); }
   .add-box textarea { height: 84px; }
 }
 .drawer:focus { outline: none; }
+
+/* new-version bar under the header */
+.banner.update { background: var(--sel); border-color: var(--sel-border); }
+.banner.update progress { width: 180px; height: 10px; }
