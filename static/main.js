@@ -134,7 +134,7 @@ async function load() {
     }
     firstLoad = false;
   } catch (e) {
-    $("#worker").innerHTML = '<span style="color:var(--down)">⚠ Tool đã tắt – hãy mở lại file TheoDoiKenhTiktok.exe</span>';
+    $("#worker").innerHTML = '<span style="color:var(--down)">⚠ Tool đã tắt – hãy mở lại file ttwatch.exe</span>';
   }
 }
 
@@ -465,7 +465,7 @@ $("#btnAbout").onclick = () => $("#dlgAbout").showModal();
 $("#aboutClose").onclick = () => $("#dlgAbout").close();
 $("#setCancel").onclick = () => $("#dlgSettings").close();
 $("#btnShutdown").onclick = async () => {
-  if (!confirm("Tắt tool? Việc quét đang chạy sẽ dừng. Mở lại bằng file TheoDoiKenhTiktok.exe.")) return;
+  if (!confirm("Tắt tool? Việc quét đang chạy sẽ dừng. Mở lại bằng file ttwatch.exe.")) return;
   await api("/api/shutdown", {}).catch(() => {});
   $("#dlgSettings").close();
   toast("Đã tắt tool");

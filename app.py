@@ -140,7 +140,7 @@ def set_settings(values: dict):
 
 
 
-# ---------------------------------------------------------------- API thêm sau bản gốc
+# ---------------------------------------------------------------- API lịch sử, tổng quan, cảnh báo, nhập/xuất
 
 def _need_channel(username):
     if not db.channel_exists(username.lower()):

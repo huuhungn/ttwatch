@@ -978,3 +978,23 @@ class ExportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaticAssetsTest(unittest.TestCase):
+    """Trang tĩnh không được trỏ tới file không tồn tại (logo, script) hay liên kết ngoài lạ."""
+
+    def test_referenced_static_files_exist(self):
+        import re
+        static = Path(__file__).resolve().parent.parent / "static"
+        for page in ("index.html", "videos.html"):
+            html = (static / page).read_text(encoding="utf-8")
+            for ref in re.findall(r'(?:src|href)="/static/([^"]+)"', html):
+                self.assertTrue((static / ref).is_file(), f"{page} trỏ tới /static/{ref} không tồn tại")
+
+    def test_external_links_only_to_project_repo(self):
+        import re
+        static = Path(__file__).resolve().parent.parent / "static"
+        for page in ("index.html", "videos.html"):
+            html = (static / page).read_text(encoding="utf-8")
+            for url in re.findall(r'href="(https?://[^"]+)"', html):
+                self.assertTrue(url.startswith("https://github.com/huuhungn/ttwatch"), url)

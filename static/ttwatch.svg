@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b3fd8"/>
+      <stop offset="1" stop-color="#0891b2"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <!-- con mắt: theo dõi -->
+  <path d="M64 256 C128 160 192 128 256 128 S384 160 448 256 C384 352 320 384 256 384 S128 352 64 256Z"
+        fill="none" stroke="#fff" stroke-width="28" stroke-linejoin="round"/>
+  <!-- đường tăng trưởng trong mắt -->
+  <polyline points="168,288 224,244 264,272 344,208" fill="none" stroke="#fff" stroke-width="26"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="344" cy="208" r="20" fill="#fde047"/>
+</svg>

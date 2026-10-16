@@ -1,4 +1,4 @@
-// Màn hình thêm sau bản gốc: tab, tổng quan, cảnh báo, chi tiết kênh, so sánh, chế độ xem,
+// Các màn hình: tab, tổng quan, cảnh báo, chi tiết kênh, so sánh, chế độ xem,
 // nhập file, bảng lệnh, trợ giúp phím tắt. Dùng chung `table`, `load`, `refresh`… của main.js.
 
 const rowOf = (u) => rowsNow().find((c) => c.username === u);

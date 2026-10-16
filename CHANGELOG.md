@@ -1,6 +1,6 @@
 # Lịch sử thay đổi
 
-## Chưa phát hành — nhánh `big-update`
+## 0.1.0 — 2026-10-16
 
 ### Thêm
 - Tab **Tổng quan**, **Cảnh báo**; ngăn chi tiết kênh với biểu đồ lịch sử và phân tích; so sánh 2–6 kênh.
@@ -14,7 +14,7 @@
 - GitHub Actions: `ci.yml` (ruff, cú pháp JS, toàn bộ test kể cả giao diện, trên Windows) và `release.yml` (build exe, chạy thử exe, nén zip + SHA256, tạo Release khi đẩy tag `v*`).
 - Chip nhóm (chuột phải để đổi tên/bỏ nhóm), cột #/username dính trái, mũi tên chọn dòng, tab điều hướng bằng phím, so sánh theo % thay đổi.
 - Màu chữ đạt WCAG AA ở cả hai giao diện (đo bằng test chạy trong trình duyệt).
-- Tài liệu: `docs/user-guide.md`, `docs/big-update-plan.md`, `docs/overnight-log.md`.
+- Tài liệu: `docs/user-guide.md`. Logo, tên và liên kết của dự án thay bằng của repo này; tên exe đổi thành `ttwatch.exe`.
 
 ### Đổi
 - Schema SQLite có version (`PRAGMA user_version`) và migration theo thứ tự.
@@ -23,7 +23,7 @@
 - Dữ liệu cũ mở bình thường; API cũ giữ nguyên hình dạng, chỉ thêm khóa mới.
 
 ### Sửa
-- Toàn bộ các lệch hành vi so với bản gốc đã báo ở `docs/scraper-diff.md` (dựng lại từ bytecode).
+- Kênh bị coi là lỗi khi TikTok chuyển trang giữa lúc đọc dữ liệu; lỗi mạng tạm thời được thử lại; số liệu ER/tăng trưởng tính cộng dồn đúng.
 
 ### Kiểm thử
 - Từ 24 lên 97 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.

@@ -104,7 +104,7 @@ def init():
 DEFAULT_SETTINGS = {
     "show_browser": "0",
     "auto_refresh_minutes": "0",
-    # Thêm sau bản gốc: kiểu tự làm mới ("quick" | "scan10"), giờ yên lặng (giờ nguyên 0–23,
+    # Kiểu tự làm mới ("quick" | "scan10"), giờ yên lặng (giờ nguyên 0–23,
     # rỗng = tắt) và ngưỡng cảnh báo.
     "auto_refresh_mode": "quick",
     "quiet_start": "",
@@ -275,7 +275,7 @@ def list_videos(key):
             "SELECT * FROM videos WHERE username=? ORDER BY create_time DESC", (key.lower(),))]
 
 
-# Cột thêm sau bản gốc: DB cũ được bổ sung khi mở app, không đổi dữ liệu sẵn có.
+# Cột thêm về sau: DB cũ được bổ sung khi mở app, không đổi dữ liệu sẵn có.
 ADDED_COLUMNS = {
     "channels": {
         "last_scan_at": "INTEGER",
@@ -311,7 +311,7 @@ def _m_video_index(c):
 
 
 # Mỗi migration chạy đúng một lần theo thứ tự và phải idempotent (DB tạo từ SCHEMA mới đã có
-# sẵn một phần). Version lưu ở PRAGMA user_version; DB của bản gốc là 0.
+# sẵn một phần). Version lưu ở PRAGMA user_version; DB chưa có version là 0.
 MIGRATIONS = [
     (1, _add_missing_columns),
     (2, _m_alerts),

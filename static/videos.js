@@ -139,7 +139,7 @@ function updateStatusbar(sel) {
 }
 
 function renderHead(c, total) {
-  document.title = `@${c.unique_id || c.username} – Theo dõi kênh Tiktok`;
+  document.title = `@${c.unique_id || c.username} – ttwatch`;
   const url = `https://www.tiktok.com/@${c.unique_id || c.username}`;
   $("#chHead").innerHTML =
     (c.avatar ? `<img class="avatar" src="${esc(c.avatar)}" referrerpolicy="no-referrer">` : '<span class="avatar ph" style="width:56px;height:56px"></span>') +

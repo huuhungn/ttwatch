@@ -16,11 +16,11 @@ if (-not $have) {
     if ($LASTEXITCODE -ne 0) { throw "Không cài được PyInstaller" }
 }
 
-& $py -m PyInstaller --noconfirm --clean --windowed --name TheoDoiKenhTiktok `
+& $py -m PyInstaller --noconfirm --clean --windowed --name ttwatch `
     --add-data "static;static" `
     --collect-submodules uvicorn --collect-submodules pystray `
     app.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller thất bại" }
 
-Write-Host "Xong: dist\TheoDoiKenhTiktok\TheoDoiKenhTiktok.exe"
+Write-Host "Xong: dist\ttwatch\ttwatch.exe"
 Write-Host "Trình duyệt: tool dùng Edge/Chrome có sẵn của máy; nếu không có, cần chạy 'playwright install chromium' trên máy đích."

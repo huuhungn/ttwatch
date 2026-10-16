@@ -57,39 +57,6 @@ header.top {
 }
 .logo { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .logo img { width: 28px; height: 28px; display: block; }
-.btn-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 13px;
-  border-radius: 7px;
-  background: #1877f2;
-  color: #fff;
-  font-weight: 600;
-  font-size: 13px;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.btn-group:hover { background: #166fe5; }
-.btn-group svg { width: 18px; height: 18px; flex: none; }
-.btn-author {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 7px;
-  border: 1px solid #1565d8;
-  color: #1565d8;
-  font-weight: 600;
-  font-size: 13px;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.btn-author:hover { background: rgba(24, 119, 242, 0.08); }
-.btn-author svg { width: 16px; height: 16px; flex: none; }
-@media (prefers-color-scheme: dark) {
-  .btn-author { color: #5ea1ff; border-color: #5ea1ff; }
-}
 .btn.danger { color: var(--down); border-color: var(--down); }
 @media (max-width: 900px) {
   header.top { flex-wrap: wrap; }

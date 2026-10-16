@@ -27,7 +27,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 
 
 
-# --- Phần bổ sung sau bản gốc ------------------------------------------------------
+# --- Nhập liệu chịu văn bản dán, thử lại lỗi tạm, đọc dữ liệu chịu điều hướng ---------------------
 ZERO_WIDTH_RE = re.compile("[\u200b\u200c\u200d\u2060\ufeff]")
 WRAP_OPEN = "([{<\"'\u201c\u2018\u00ab"
 WRAP_CLOSE = ")]}>\"'\u201d\u2019\u00bb"
@@ -69,8 +69,8 @@ def _is_transient(exc):
 def _evaluate_after_navigation(page, script):
     """Chạy JS; nếu TikTok chuyển trang giữa chừng thì chờ trang mới và trả None.
 
-    Bản gốc gọi thẳng page.evaluate nên "Execution context was destroyed" làm cả kênh
-    thành lỗi; trả None để vòng lặp sẵn có tự thử lại.
+    Gọi thẳng page.evaluate thì "Execution context was destroyed" làm cả kênh thành lỗi;
+    trả None để vòng lặp bên ngoài tự thử lại.
     """
     try:
         return page.evaluate(script)
@@ -209,7 +209,7 @@ class Scraper:
             time.sleep(1.5)
 
     def _execute(self, key, job):
-        """Chạy một job; lỗi tạm thời được thử lại, lỗi khác báo ngay như bản gốc."""
+        """Chạy một job; lỗi tạm thời được thử lại, lỗi khác báo ngay."""
         attempts = len(self.RETRY_DELAYS) + 1
         for attempt in range(1, attempts + 1):
             try:

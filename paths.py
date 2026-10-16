@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "Theo dõi kênh Tiktok"
+APP_NAME = "ttwatch"
 FROZEN = getattr(sys, "frozen", False)
 # Khi chạy bằng PyInstaller, tài nguyên (static/) được giải nén vào _MEIPASS;
 # chạy bằng Python thì lấy cạnh file .py.

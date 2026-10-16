@@ -7,8 +7,7 @@ from PIL import Image
 
 from paths import APP_NAME, DATA_DIR, STATIC_DIR
 
-GROUP_URL = "https://www.facebook.com/groups/815190970340230"
-AUTHOR_URL = "https://www.facebook.com/duckuongg/"
+REPO_URL = "https://github.com/huuhungn/ttwatch"
 
 _icon = None
 
@@ -35,13 +34,12 @@ def run_tray(url, on_quit, first_run_notice=True):
     menu = pystray.Menu(
         pystray.MenuItem(f"Mở {APP_NAME}", lambda: webbrowser.open(url), default=True),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Tham gia nhóm MFG - Kiếm Tiền Tiktok Global", lambda: webbrowser.open(GROUP_URL)),
-        pystray.MenuItem("Facebook tác giả", lambda: webbrowser.open(AUTHOR_URL)),
+        pystray.MenuItem("Mã nguồn trên GitHub", lambda: webbrowser.open(REPO_URL)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Mở thư mục dữ liệu", lambda: os.startfile(DATA_DIR)),
         pystray.MenuItem("Tắt tool", quit_),
     )
-    icon = pystray.Icon("theo_doi_kenh_tiktok", Image.open(STATIC_DIR / "logo.png"), APP_NAME, menu)
+    icon = pystray.Icon("ttwatch", Image.open(STATIC_DIR / "ttwatch.png"), APP_NAME, menu)
     global _icon
     _icon = icon
 

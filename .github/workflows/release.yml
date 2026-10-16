@@ -33,7 +33,7 @@ jobs:
 
       - name: Đóng gói
         run: >
-          python -m PyInstaller --noconfirm --clean --windowed --name TheoDoiKenhTiktok
+          python -m PyInstaller --noconfirm --clean --windowed --name ttwatch
           --add-data "static;static"
           --collect-submodules uvicorn --collect-submodules pystray
           app.py
@@ -45,7 +45,7 @@ jobs:
           NO_OPEN: "1"
           NO_TRAY: "1"
         run: |
-          $exe = "dist\TheoDoiKenhTiktok\TheoDoiKenhTiktok.exe"
+          $exe = "dist\ttwatch\ttwatch.exe"
           $p = Start-Process $exe -PassThru
           $ok = $false
           for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
@@ -57,7 +57,7 @@ jobs:
           }
           if (-not $ok) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw "Exe không phản hồi /api/ping" }
           $page = Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing
-          if ($page.StatusCode -ne 200 -or $page.Content -notmatch "Theo dõi kênh") { throw "Trang chủ không đúng" }
+          if ($page.StatusCode -ne 200 -or $page.Content -notmatch "ttwatch") { throw "Trang chủ không đúng" }
           Invoke-RestMethod -Method Post http://127.0.0.1:8765/api/shutdown | Out-Null
           $p.WaitForExit(10000) | Out-Null
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
@@ -68,8 +68,8 @@ jobs:
         shell: pwsh
         run: |
           $ver = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
-          $zip = "TheoDoiKenhTiktok-$ver-win64.zip"
-          Compress-Archive -Path dist\TheoDoiKenhTiktok -DestinationPath $zip
+          $zip = "ttwatch-$ver-win64.zip"
+          Compress-Archive -Path dist\ttwatch -DestinationPath $zip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
           "zip=$zip" >> $env:GITHUB_OUTPUT
