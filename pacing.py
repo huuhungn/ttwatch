@@ -5,6 +5,7 @@ unreadable pages, then captchas, and keeps refusing for several minutes. Fixed, 
 makes that worse, so the gap between jobs is random and every consecutive trouble doubles the pause.
 All time handling is injected (`now`, `rng`) so the policy is testable without sleeping.
 """
+import math
 import random
 import threading
 import time
@@ -82,7 +83,8 @@ class Pacer:
         with self._lock:
             left = self.resume_at - self._now()
             if self.reason in (BLOCKED, CAPTCHA) and left > 0:
-                return {"seconds": int(left) + 1, "reason": self.reason, "streak": self.streak}
+                # Round to milliseconds first: float error makes "now + 900 - now" slightly more than 900 for some clock values.
+                return {"seconds": math.ceil(round(left, 3)), "reason": self.reason, "streak": self.streak}
         return None
 
     def skip(self):

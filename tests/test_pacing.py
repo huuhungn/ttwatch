@@ -86,7 +86,7 @@ class BackoffTest(unittest.TestCase):
                         wait = pacer.after_job("scan", outcome)
                         self.assertLessEqual(wait, limit, (pace, outcome, seed, n))
                         self.assertLessEqual(pacer.remaining(), limit + 1e-6, (pace, outcome, seed, n))   # float error of now+wait-now
-                        self.assertLessEqual(pacer.backing_off()["seconds"], limit + 1, (pace, outcome, seed, n))
+                        self.assertLessEqual(pacer.backing_off()["seconds"], limit, (pace, outcome, seed, n))
                         clock.t += wait   # the next trouble comes right after the pause, so the streak keeps growing
 
     def test_slow_pace_reaches_the_cap_but_not_beyond_it(self):
@@ -170,6 +170,31 @@ class BackoffTest(unittest.TestCase):
         clock.t += 11
         self.assertIsNone(pacer.backing_off())
         self.assertEqual(pacer.remaining(), 0.0)
+
+    def test_countdown_rounds_up_without_overshooting_the_wait(self):
+        """A pause of exactly 15 minutes shows as 900 seconds, never 901; a fraction of a second rounds up to 1."""
+        pacer, clock = _pacer()
+        pacer.reason = pacing.BLOCKED
+        for left, shown in ((900.0, 900), (899.2, 900), (61.0, 61), (60.01, 61), (1.0, 1), (0.4, 1)):
+            pacer.resume_at = clock.t + left
+            self.assertEqual(pacer.backing_off()["seconds"], shown, left)
+        pacer.resume_at = clock.t   # nothing left: no pause to show
+        self.assertIsNone(pacer.backing_off())
+
+    def test_countdown_survives_float_error_of_the_clock(self):
+        clock = _Clock()
+        clock.t = 1023.7964627091891   # (t + 900.0) - t is 900.0000000000001 for this value: a bare ceil shows 901
+        self.assertGreater((clock.t + 900.0) - clock.t, 900.0)
+        pacer = pacing.Pacer(pace=lambda: "normal", now=clock, rng=random.Random(1))
+        pacer.reason = pacing.CAPTCHA
+        pacer.resume_at = clock.t + 900.0
+        self.assertEqual(pacer.backing_off()["seconds"], 900)
+        for pace in ("normal", "slow"):
+            pacer = pacing.Pacer(pace=lambda: pace, now=clock, rng=random.Random(2))
+            for _ in range(15):
+                pacer.after_job("scan", pacing.CAPTCHA)
+                self.assertLessEqual(pacer.backing_off()["seconds"], 900)
+                clock.t += pacer.remaining()
 
     def test_skip_drops_the_wait_but_keeps_the_streak(self):
         pacer, _ = _pacer()
