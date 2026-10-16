@@ -26,6 +26,8 @@ Tool chỉ đọc trang TikTok công khai bằng trình duyệt của máy bạn
 
 Máy khác chỉ cần tải zip ở mục Releases, giải nén và chạy `ttwatch.exe`; dữ liệu nằm trong `TheoDoiKenhTiktok_data` cạnh exe.
 
+Exe chưa được ký số nên Windows SmartScreen có thể cảnh báo lần đầu (chọn *Thông tin thêm → Vẫn chạy*). Đối chiếu file tải về với file `.sha256` đi kèm nếu muốn chắc chắn.
+
 ## Kiểm thử
 
 ```bash
