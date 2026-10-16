@@ -151,6 +151,12 @@ async function loadSparks() {
   } catch {}
 }
 
+function pauseText(p) {
+  const m = Math.floor(p.seconds / 60);
+  const left = m ? `${m} phút ${p.seconds % 60} giây` : `${p.seconds} giây`;
+  return (p.reason === "captcha" ? "TikTok hiện captcha" : "TikTok chưa trả dữ liệu") + `, tool nghỉ ${left} rồi quét tiếp`;
+}
+
 function renderWorker() {
   const c = worker.current;
   if (!c && !worker.queue) {
@@ -158,6 +164,17 @@ function renderWorker() {
     return;
   }
   const rest = worker.queue - (c ? 1 : 0);
+  if (!c && worker.pause) {
+    $("#worker").innerHTML =
+      `<span title="Nghỉ lâu dần để TikTok không chặn quét">⏸ ${esc(pauseText(worker.pause))}</span>` +
+      (rest > 0 ? ` · còn ${rest} kênh chờ` : "") +
+      ' <button class="btn" id="btnResume" type="button">Quét tiếp ngay</button>';
+    $("#btnResume").onclick = async () => {
+      worker = (await api("/api/worker/resume", {})).worker;
+      renderWorker();
+    };
+    return;
+  }
   $("#worker").innerHTML =
     `<span class="spin"></span>` +
     (c
@@ -447,6 +464,7 @@ $("#btnSettings").onclick = async () => {
   $("#setAutoMode").value = s.auto_refresh_mode || "quick";
   $("#setQuietStart").value = s.quiet_start ?? "";
   $("#setQuietEnd").value = s.quiet_end ?? "";
+  $("#setPace").value = s.scan_pace || "normal";
   $("#setAlerts").checked = s.alerts_enabled !== "0";
   $("#setAlertPct").value = s.alert_follow_pct ?? "5";
   $("#setAlertVideo").checked = s.alert_new_video !== "0";
@@ -483,6 +501,7 @@ $("#setSave").onclick = async () => {
     auto_refresh_mode: $("#setAutoMode").value,
     quiet_start: $("#setQuietStart").value,
     quiet_end: $("#setQuietEnd").value,
+    scan_pace: $("#setPace").value,
     alerts_enabled: $("#setAlerts").checked ? "1" : "0",
     alert_follow_pct: String(Math.max(0, parseFloat($("#setAlertPct").value) || 0)),
     alert_new_video: $("#setAlertVideo").checked ? "1" : "0",

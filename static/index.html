@@ -102,6 +102,15 @@
       </select>
     </div>
     <div class="field">
+      <label for="setPace">Nhịp quét</label>
+      <select id="setPace">
+        <option value="normal">Bình thường (nghỉ ngẫu nhiên vài giây giữa các kênh)</option>
+        <option value="slow">Chậm, an toàn hơn (nghỉ lâu hơn, hợp khi theo dõi nhiều kênh)</option>
+        <option value="off">Nhanh, không giãn nhịp (dễ bị TikTok chặn)</option>
+      </select>
+      <small>Khi TikTok hiện captcha hoặc không trả dữ liệu, tool tự nghỉ lâu dần (tối đa 15 phút) rồi quét tiếp.</small>
+    </div>
+    <div class="field">
       <label>Giờ yên lặng (không tự cập nhật)</label>
       <div class="scan-opts">
         <select id="setQuietStart"></select> →

@@ -107,6 +107,13 @@ def refresh(req: ScanReq):
     return {"queued": scraper.enqueue([u.lower() for u in req.usernames if db.channel_exists(u.lower())], req.job)}
 
 
+@app.post("/api/worker/resume")
+def worker_resume():
+    """Skip the pause the scan queue is waiting out (after TikTok pushed back)."""
+    scraper.skip_pause()
+    return {"worker": scraper.status()}
+
+
 @app.post("/api/channels/meta")
 def update_meta(req: MetaReq):
     db.update_meta(req.usernames, req.group_name, req.note)

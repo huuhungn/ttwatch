@@ -163,7 +163,9 @@ function renderWorker(w) {
     ? c.total
       ? `<span class="spin"></span>Đang cập nhật view · ${nf.format(c.videos)}/${nf.format(c.total)} video`
       : `<span class="spin"></span>Đang quét kênh này${c.videos ? ` · ${nf.format(c.videos)} video` : "…"}`
-    : channel?.status === "queued" ? '<span class="spin"></span>Đang chờ đến lượt quét' : "";
+    : channel?.status === "queued"
+      ? w.pause ? "⏸ TikTok đang giới hạn, tool nghỉ một lúc rồi sẽ quét kênh này" : '<span class="spin"></span>Đang chờ đến lượt quét'
+      : "";
 }
 
 let lastJson = "";

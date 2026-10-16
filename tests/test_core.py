@@ -27,6 +27,7 @@ def _fresh_db(name):
 
 def _make_scraper():
     """A Scraper with a real queue and lock, but no background threads and no browser."""
+    import pacing
     from scraper import Scraper
 
     scraper = Scraper.__new__(Scraper)
@@ -38,6 +39,8 @@ def _make_scraper():
     scraper._ctx = None
     scraper._ctx_visible = None
     scraper._captcha_gave_up = 0.0
+    scraper._flags = set()
+    scraper.pacer = pacing.Pacer(pace=lambda: "normal")
     scraper.RETRY_DELAYS = (0, 0)
     return scraper
 
@@ -367,7 +370,7 @@ class QueueTest(unittest.TestCase):
 
     def test_status_matches_what_the_page_reads(self):
         s = self.scraper
-        self.assertEqual(s.status(), {"queue": 0, "current": None})
+        self.assertEqual(s.status(), {"queue": 0, "current": None, "pause": None})
         s.enqueue(["demo", "other"], {"mode": "quick"})
         self.assertEqual(s.status()["queue"], 2)
         s.current = {"username": "demo", "label": "Cập nhật nhanh", "videos": 0, "total": 0, "started": 1}
@@ -950,7 +953,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(scraper.jobs.qsize(), 2)
         listing = client.get("/api/channels").json()
         self.assertEqual([c["username"] for c in listing["channels"]], ["demo", "other"])
-        self.assertEqual(listing["worker"], {"queue": 2, "current": None})
+        self.assertEqual(listing["worker"], {"queue": 2, "current": None, "pause": None})
         # Channels not in the list are skipped; a job is required.
         res = client.post("/api/channels/refresh", json={"usernames": ["Demo", "ghost"], "job": {"mode": "scan"}})
         self.assertEqual(res.json(), {"queued": 1})

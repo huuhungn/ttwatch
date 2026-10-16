@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Scan pacing.** The tool rests a random few seconds between channels instead of a fixed 1.5 seconds, and scroll and video-page waits vary a little too. When TikTok pushes back (a captcha, an empty video list for a channel that has videos, an unreadable page, a timeout that survives the retries, or TikTok stopping mid-scan) the tool rests 45 seconds (2 minutes after a captcha), doubling with every further trouble in a row up to 15 minutes at every pace, and returns to the normal pace after the first clean scan (troubles more than 30 minutes apart count as separate incidents, and a captcha you solve yourself does not slow the queue down). The bar under the header shows the countdown with a *Quét tiếp ngay* button (`POST /api/worker/resume`) to skip it.
+- A *Nhịp quét* setting (`scan_pace`): normal (default), slow, or fast (the old fixed pause, no backing off).
+
+### Changed
+- `/api/channels` and the other worker statuses carry a `pause` field (`null` when nothing is waiting out trouble).
+
 ## 0.2.0 — 2026-10-16
 
 ### Added

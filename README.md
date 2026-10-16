@@ -68,6 +68,7 @@ Requires `uv` on PATH; the script installs PyInstaller into `.venv` by itself. `
 |---|---|
 | `app.py` | FastAPI: API, static pages, file export, startup |
 | `scraper.py` | Playwright, scan queue, retries, auto-refresh |
+| `pacing.py` | random gaps between channels, growing pause after captchas and blocked scans |
 | `db.py` | SQLite, versioned migrations, backups |
 | `insights.py` | history, overview, analysis, comparison, alerts, saved views |
 | `instance_lock.py` | single-instance lock on the data folder |

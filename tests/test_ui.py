@@ -439,6 +439,50 @@ class UiTest(unittest.TestCase):
         finally:
             self.db.set_settings({"update_auto": "1"})
 
+    # ------------------------------------------------------------ scan pacing
+
+    def test_worker_bar_shows_the_pause_and_can_skip_it(self):
+        p = self.page
+        paused = {"seconds": 95, "reason": "captcha", "streak": 2}
+        resumed = []
+
+        def channels(route):
+            response = route.fetch()
+            data = response.json()
+            data["worker"] = {"queue": 3, "current": None, "pause": paused}
+            route.fulfill(json=data)
+
+        def resume(route):
+            resumed.append(True)
+            paused.clear()
+            route.fulfill(json={"worker": {"queue": 3, "current": None, "pause": None}})
+
+        p.route("**/api/channels", channels)
+        p.route("**/api/worker/resume", resume)
+        self.open_home()
+        p.wait_for_selector("#btnResume")
+        text = p.locator("#worker").inner_text()
+        self.assertIn("captcha", text)
+        self.assertIn("1 phút 35 giây", text)
+        self.assertIn("còn 3 kênh chờ", text)
+        p.click("#btnResume")
+        p.wait_for_function("!document.querySelector('#btnResume')")
+        self.assertEqual(resumed, [True])
+
+    def test_scan_pace_setting_is_saved(self):
+        p = self.page
+        self.open_home()
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        self.assertEqual(p.locator("#setPace").input_value(), "normal")
+        p.select_option("#setPace", "slow")
+        try:
+            p.click("#setSave")
+            p.wait_for_function("!document.querySelector('#dlgSettings').open")
+            self.assertEqual(self.db.get_setting("scan_pace"), "slow")
+        finally:
+            self.db.set_settings({"scan_pace": "normal"})
+
 
 if __name__ == "__main__":
     unittest.main()

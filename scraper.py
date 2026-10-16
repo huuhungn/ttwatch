@@ -16,6 +16,7 @@ from playwright.sync_api import sync_playwright
 
 import db
 import insights
+import pacing
 from paths import PROFILE_DIR
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._]{2,24}$")
@@ -160,6 +161,8 @@ class Scraper:
         self._ctx = None
         self._ctx_visible = None
         self._captcha_gave_up = 0.0
+        self.pacer = pacing.Pacer(pace=lambda: db.get_setting("scan_pace", "normal"))
+        self._flags = set()   # what TikTok did during the current job: pacing.CAPTCHA / pacing.BLOCKED
         threading.Thread(target=self._run, daemon=True).start()
         threading.Thread(target=self._auto_refresh_loop, daemon=True).start()
 
@@ -196,12 +199,27 @@ class Scraper:
         with self.lock:
             return {
                 "queue": len(self.pending) + (1 if self.current else 0),
-                "current": dict(self.current) if self.current else None}
+                "current": dict(self.current) if self.current else None,
+                "pause": self.pacer.backing_off()}
+
+    def skip_pause(self):
+        """Let the queue go on right now instead of waiting out a pause."""
+        self.pacer.skip()
+
+    def _wait_turn(self):
+        """Wait out the pacing gap or the trouble pause; the countdown ends early when the user skips it."""
+        left = self.pacer.remaining()
+        while left > 0:
+            time.sleep(min(1.0, left))
+            left -= 1.0
+            if self.pacer.remaining() <= 0:
+                break
 
 
     def _run(self):
         while True:
             qkey = self.jobs.get()
+            self._wait_turn()
             key = qkey.split("#")[0]
             with self.lock:
                 job = self.pending.pop(qkey, None)
@@ -211,18 +229,24 @@ class Scraper:
                 self.current = {"username": key, "label": describe_job(job), "videos": 0,
                                 "total": len(job.get("ids", [])), "started": time.time()}
             db.set_status(key, "running")
+            outcome = pacing.NEUTRAL
             try:
-                self._execute(key, job)
+                outcome = self._execute(key, job)
             finally:
                 with self.lock:
                     self.current = None
                     # A new job was queued for this channel while it was running: put it back in the queued state.
                     if key in self.pending or f"{key}#videos" in self.pending:
                         db.set_status(key, "queued")
-            time.sleep(1.5)
+                self.pacer.after_job(job["mode"], outcome)
 
     def _execute(self, key, job):
-        """Run one job; transient errors are retried, other errors are reported immediately."""
+        """Run one job; transient errors are retried, other errors are reported immediately.
+
+        Returns how it went for the pacer: OK, CAPTCHA / BLOCKED when TikTok pushed back, NEUTRAL for an
+        error that says nothing about TikTok's mood (channel gone, browser profile busy).
+        """
+        self._flags = set()
         attempts = len(self.RETRY_DELAYS) + 1
         for attempt in range(1, attempts + 1):
             try:
@@ -237,13 +261,13 @@ class Scraper:
                         _notify_tray(insights.check_alerts(key))
                     except Exception:
                         traceback.print_exc()  # a failing alert must not fail the scan
-                return
+                return self._outcome(ch)
             except CaptchaSolved:
                 if attempt < attempts:
                     db.set_status(key, "running", "Đã giải captcha, đang quét lại kênh")
                     continue
                 db.set_status(key, "error", "Đã giải captcha nhưng chưa quét xong – hãy quét lại kênh")
-                return
+                return pacing.CAPTCHA
             except Exception as e:
                 traceback.print_exc()
                 self._close_browser()
@@ -255,7 +279,15 @@ class Scraper:
                     continue
                 suffix = f" (đã thử {attempt} lần)" if attempt > 1 else ""
                 db.set_status(key, "error", f"Lỗi: {e}{suffix}")
-                return
+                return pacing.BLOCKED if _is_transient(e) else pacing.NEUTRAL
+        return pacing.NEUTRAL
+
+    def _outcome(self, channel):
+        if pacing.CAPTCHA in self._flags:
+            return pacing.CAPTCHA
+        if pacing.BLOCKED in self._flags:
+            return pacing.BLOCKED
+        return pacing.OK if channel and channel["status"] == "done" else pacing.NEUTRAL
 
     def _auto_refresh_loop(self):
         last = time.time()
@@ -346,6 +378,7 @@ class Scraper:
                         raise CaptchaSolved()
                     db.set_status(key, "error", CAPTCHA_UNSOLVED)
                 else:
+                    self._flags.add(pacing.BLOCKED)
                     db.set_status(key, "error", "Không đọc được trang kênh")
                 return
 
@@ -430,12 +463,14 @@ class Scraper:
                     raise CaptchaSolved()
                 db.set_status(key, "error", CAPTCHA_UNSOLVED)
                 return
+            if not items and video_count:
+                self._flags.add(pacing.BLOCKED)   # TikTok answered with an empty list for a channel that has videos
 
             if job["mode"] == "scan":
                 while has_more and idle < 10 and not enough():
                     _evaluate_after_navigation(page, "() => window.scrollTo(0, document.body.scrollHeight)")
                     page.mouse.wheel(0, 3000)
-                    page.wait_for_timeout(1200)
+                    page.wait_for_timeout(self.pacer.scroll_ms())
                     idle = 0 if collect() else idle + 1
                     if self._has_captcha(page) and not self._wait_captcha_solved(page, key):
                         page.wait_for_timeout(3000)
@@ -454,6 +489,7 @@ class Scraper:
             if job["mode"] == "quick":
                 note = ""
             elif has_more and not enough():
+                self._flags.add(pacing.BLOCKED)
                 note = f"{describe_job(job)}: mới lấy được {len(videos)} video – TikTok ngừng trả thêm, thử quét lại sau"
             elif is_full:
                 note = ""
@@ -498,11 +534,15 @@ class Scraper:
                 with self.lock:
                     if self.current:
                         self.current["videos"] = n
+                if n < len(ids):
+                    page.wait_for_timeout(self.pacer.page_ms())
         finally:
             try:
                 page.close()
             except Exception:
                 pass
+        if len(ids) >= 3 and not rows:
+            self._flags.add(pacing.BLOCKED)
         db.finish_scan(key, rows, full=False)
         note = f"Cập nhật view {len(rows)} video"
         if missing:
@@ -530,6 +570,14 @@ class Scraper:
         After giving up, wait CAPTCHA_COOLDOWN seconds before showing the window again (overnight
         auto-refresh must not keep popping the window up).
         """
+        solved = self._ask_user_to_solve_captcha(page, key)
+        if not solved:
+            # A captcha the user solved says TikTok trusts the session again, so the rest of the scan is not
+            # held back; only one left standing makes the pacer back off.
+            self._flags.add(pacing.CAPTCHA)
+        return solved
+
+    def _ask_user_to_solve_captcha(self, page, key):
         if time.time() - self._captcha_gave_up < self.CAPTCHA_COOLDOWN:
             return False
         was_visible = bool(self._ctx_visible)

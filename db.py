@@ -112,6 +112,8 @@ DEFAULT_SETTINGS = {
     "alerts_enabled": "1",
     "alert_follow_pct": "5",
     "alert_new_video": "1",
+    # Scan pacing (pacing.py): "off" | "normal" | "slow".
+    "scan_pace": "normal",
     # Self-update (updater.py): check GitHub, install when idle, the version the user skipped,
     # and the version whose automatic install failed (not retried on its own).
     "update_check": "1",
