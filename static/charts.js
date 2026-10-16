@@ -1,17 +1,17 @@
-// Biểu đồ SVG thuần, không phụ thuộc thư viện. Màu lấy từ biến CSS --c1..--c6.
+// Plain SVG charts, no library dependency. Colors come from the CSS variables --c1..--c6.
 
 const Charts = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const PALETTE = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)", "var(--c6)"];
 
-  // Số dạng văn bản thuần (1,2M) cho trục và tooltip.
+  // Plain-text numbers (1,2M) for axes and tooltips.
   function short(n) {
     if (n === null || n === undefined || Number.isNaN(n)) return "–";
     const a = Math.abs(n);
     for (const [v, u] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
       if (a >= v) {
         let t = (n / v).toFixed(a >= v * 100 ? 0 : a >= v * 10 ? 1 : 2);
-        if (t.includes(".")) t = t.replace(/\.?0+$/, ""); // chỉ bỏ số 0 thừa sau dấu thập phân (50 giữ nguyên)
+        if (t.includes(".")) t = t.replace(/\.?0+$/, ""); // strip only trailing zeros after the decimal point (50 stays as is)
         return t.replace(".", ",") + u;
       }
     }
@@ -22,7 +22,7 @@ const Charts = (() => {
     return n === null || n === undefined ? "–" : new Intl.NumberFormat("vi-VN").format(Math.round(n));
   }
 
-  // Bước chia trục "đẹp": 1, 2, 5 × 10^k.
+  // "Nice" axis step: 1, 2, 5 × 10^k.
   function niceStep(range, ticks) {
     const raw = range / Math.max(1, ticks);
     const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
@@ -53,7 +53,7 @@ const Charts = (() => {
   /**
    * series: [{ name, points: [[ts, value], ...], color? }]
    * opts: { height, fmt(value) -> text, empty }
-   * Vẽ lại khi đổi kích thước. Trả về hàm hủy.
+   * Redraws on resize. Returns a dispose function.
    */
   function line(el, series, opts = {}) {
     const height = opts.height || 220;
@@ -145,7 +145,7 @@ const Charts = (() => {
     return () => ro?.disconnect();
   }
 
-  /** Đường xu hướng nhỏ cho ô trong bảng. values: [số...]. Trả về chuỗi SVG. */
+  /** Small trend line for a table cell. values: [number...]. Returns an SVG string. */
   function spark(values, { w = 84, h = 24 } = {}) {
     const v = (values || []).filter((x) => x !== null && x !== undefined);
     if (v.length < 2) return '<span class="muted">–</span>';
@@ -158,7 +158,7 @@ const Charts = (() => {
     return `<svg class="spark ${cls}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts.join(" ")}" fill="none"/></svg>`;
   }
 
-  /** Cột ngang: items [{label, value}]. */
+  /** Horizontal bars: items [{label, value}]. */
   function bars(items, { fmt = full } = {}) {
     const max = Math.max(1, ...items.map((i) => i.value));
     return `<div class="bars">${items
@@ -166,7 +166,7 @@ const Charts = (() => {
       .join("")}</div>`;
   }
 
-  /** Cột đứng nhỏ: items [{label, value}] (ví dụ số bài/tuần). */
+  /** Small vertical bars: items [{label, value}] (e.g. posts per week). */
   function columns(items, { height = 70 } = {}) {
     const max = Math.max(1, ...items.map((i) => i.value));
     return `<div class="cols" style="height:${height}px">${items
@@ -174,7 +174,7 @@ const Charts = (() => {
       .join("")}</div>`;
   }
 
-  /** Bản đồ nhiệt 7×24: matrix[thứ][giờ] = {count, avg_views}. */
+  /** 7×24 heatmap: matrix[weekday][hour] = {count, avg_views}. */
   function heatmap(matrix) {
     const days = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
     const max = Math.max(1, ...matrix.flat().map((c) => c.avg_views));

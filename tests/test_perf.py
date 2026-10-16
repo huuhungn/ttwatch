@@ -1,4 +1,4 @@
-"""Đo thời gian các truy vấn tổng hợp trên dữ liệu lớn giả (không mạng)."""
+"""Time the aggregate queries on large synthetic data (no network)."""
 import time
 import unittest
 
@@ -50,7 +50,7 @@ class LargeDataTest(unittest.TestCase):
         self.assertEqual(len(hist), SNAPSHOTS)
         print(f"\n[perf] list_channels {t_list*1000:.0f} ms, overview {t_over*1000:.0f} ms, "
               f"sparklines {t_spark*1000:.0f} ms, insights {t_ins*1000:.0f} ms, history {t_hist*1000:.0f} ms")
-        # Ngưỡng rộng (máy chậm, đĩa chậm); đo thực tế ~30–70 ms.
+        # Generous threshold (slow machine, slow disk); measured at roughly 30-70 ms.
         for name, t in (("list_channels", t_list), ("overview", t_over), ("sparklines", t_spark), ("insights", t_ins)):
             self.assertLess(t, 1.0, name)
 

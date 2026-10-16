@@ -1,7 +1,7 @@
-"""Khóa thư mục dữ liệu để mỗi thư mục chỉ có một app chạy.
+"""Lock the data folder so only one app instance runs per folder.
 
-Dùng khóa của hệ điều hành trên file `app.lock`, nên app bị tắt ngang (crash, kill)
-thì khóa tự nhả, không để lại khóa treo.
+Uses an OS-level lock on the `app.lock` file, so if the app dies abruptly (crash, kill)
+the lock is released automatically and no stale lock is left behind.
 """
 from __future__ import annotations
 

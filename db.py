@@ -66,10 +66,10 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 
 
 class _Conn(sqlite3.Connection):
-    """`with _conn() as c` commit/rollback rồi đóng hẳn.
+    """`with _conn() as c` commits or rolls back, then closes the connection.
 
-    Mặc định sqlite3 chỉ commit, kết nối nằm đó đến khi bị GC: trên Windows file DB bị
-    giữ khóa nên không xóa/di chuyển/sao lưu được ngay sau khi dùng xong.
+    By default sqlite3 only commits and the connection lingers until it is garbage-collected:
+    on Windows the DB file stays locked, so it cannot be deleted, moved or backed up right after use.
     """
 
     def __exit__(self, *exc):
@@ -94,18 +94,18 @@ def init():
         c.executescript(SCHEMA)
         _migrate(c)
         c.execute("PRAGMA journal_mode=WAL")
-        # Lần chạy trước bị tắt giữa chừng: kênh đang xếp hàng/đang quét không còn job nào thật.
+        # The previous run was killed midway: channels still queued/running have no real job behind them.
         c.execute("UPDATE channels SET status='error', message='Bị dừng giữa chừng – hãy cập nhật lại' WHERE status IN ('queued','running')")
 
 
-# show_browser: "1" = hiện cửa sổ trình duyệt để giải captcha.
-# auto_refresh_minutes: "0" = tắt; N > 0 = tự cập nhật nhanh mọi kênh sau mỗi N phút.
+# show_browser: "1" = show the browser window so a captcha can be solved.
+# auto_refresh_minutes: "0" = off; N > 0 = quick-refresh every channel every N minutes.
 
 DEFAULT_SETTINGS = {
     "show_browser": "0",
     "auto_refresh_minutes": "0",
-    # Kiểu tự làm mới ("quick" | "scan10"), giờ yên lặng (giờ nguyên 0–23,
-    # rỗng = tắt) và ngưỡng cảnh báo.
+    # Auto-refresh mode ("quick" | "scan10"), quiet hours (whole hours 0-23,
+    # empty = off) and alert thresholds.
     "auto_refresh_mode": "quick",
     "quiet_start": "",
     "quiet_end": "",
@@ -123,7 +123,7 @@ def get_setting(key, default=None):
 
 def get_settings():
     with _lock, _conn() as c:
-        # Khóa "view:*" là chế độ xem đã lưu (insights.py), không phải cài đặt.
+        # "view:*" keys are saved views (insights.py), not settings.
         rows = {r["key"]: r["value"] for r in c.execute("SELECT key, value FROM settings WHERE key NOT LIKE 'view:%'")}
     return {**DEFAULT_SETTINGS, **rows}
 
@@ -138,7 +138,7 @@ def set_settings(values):
 
 
 def add_channels(usernames):
-    """Trả về (đã thêm, đã có sẵn)."""
+    """Return (added, already existed)."""
     added, existed = [], []
     now = int(time.time())
     with _lock, _conn() as c:
@@ -209,7 +209,7 @@ def finish_scan(key, videos, full):
                           (v["id"], key, v["description"], v["create_time"], v["duration"], v["cover"], v["play"],
                            v["digg"], v["comment"], v["share"], v["collect"], v["music"], v["is_ad"], now))
         if full:
-            # Quét toàn bộ: video không còn trong danh sách TikTok trả về thì xóa khỏi DB.
+            # Full scan: videos no longer in the list TikTok returns are deleted from the DB.
             ids = [v["id"] for v in videos]
             if ids:
                 c.execute(f"DELETE FROM videos WHERE username=? AND id NOT IN ({','.join('?' * len(ids))})", (key, *ids))
@@ -275,7 +275,7 @@ def list_videos(key):
             "SELECT * FROM videos WHERE username=? ORDER BY create_time DESC", (key.lower(),))]
 
 
-# Cột thêm về sau: DB cũ được bổ sung khi mở app, không đổi dữ liệu sẵn có.
+# Columns added later: older DBs get them when the app starts; existing data is untouched.
 ADDED_COLUMNS = {
     "channels": {
         "last_scan_at": "INTEGER",
@@ -310,8 +310,8 @@ def _m_video_index(c):
     c.execute("CREATE INDEX IF NOT EXISTS idx_videos_user_time ON videos(username, create_time)")
 
 
-# Mỗi migration chạy đúng một lần theo thứ tự và phải idempotent (DB tạo từ SCHEMA mới đã có
-# sẵn một phần). Version lưu ở PRAGMA user_version; DB chưa có version là 0.
+# Each migration runs exactly once, in order, and must be idempotent (a DB created from the
+# current SCHEMA already has part of it). The version is stored in PRAGMA user_version; a DB without one is 0.
 MIGRATIONS = [
     (1, _add_missing_columns),
     (2, _m_alerts),
@@ -347,7 +347,7 @@ def list_backups():
 
 
 def backup_now(tag=""):
-    """Sao chép nhất quán (API backup của SQLite, an toàn khi đang ghi). Trả về đường dẫn hoặc None."""
+    """Consistent copy (SQLite backup API, safe while writing). Returns the path or None."""
     try:
         d = backup_dir()
         d.mkdir(parents=True, exist_ok=True)
@@ -374,7 +374,7 @@ def backup_now(tag=""):
                 pass
         return dest
     except (OSError, sqlite3.Error):
-        # Sao lưu hỏng (ổ đầy, thư mục chỉ đọc) không được chặn việc mở app.
+        # A failed backup (full disk, read-only folder) must not block app startup.
         return None
 
 
@@ -396,7 +396,7 @@ def _backup_before_start():
 
 
 def record_scan(key, label):
-    """Ghi lần quét thành công gần nhất và kiểu quét, để trang videos hiển thị."""
+    """Record the latest successful scan and its type, shown on the videos page."""
     with _lock, _conn() as c:
         c.execute(
             "UPDATE channels SET last_scan_at=?, last_scan_label=? WHERE username=?",

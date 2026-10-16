@@ -1,4 +1,4 @@
-// ---------------------------------------------------------------- tiện ích
+// ---------------------------------------------------------------- utilities
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -70,7 +70,7 @@ async function copyText(text, label = "Đã sao chép") {
   toast(label);
 }
 
-/** opt: { ms, action: { label, fn } } – action hiện thành nút trong thông báo (ví dụ Hoàn tác). */
+/** opt: { ms, action: { label, fn } } – action is shown as a button in the toast (e.g. Undo). */
 function toast(msg, type = "", opt = {}) {
   let box = $("#toasts");
   if (!box) {
@@ -101,7 +101,7 @@ function toast(msg, type = "", opt = {}) {
   return t;
 }
 
-// ---------------------------------------------------------------- menu chuột phải
+// ---------------------------------------------------------------- context menu
 
 const ContextMenu = {
   el: null,
@@ -144,10 +144,10 @@ addEventListener("keydown", (e) => e.key === "Escape" && ContextMenu.hide());
 addEventListener("blur", () => ContextMenu.hide());
 addEventListener("resize", () => ContextMenu.hide());
 
-// ---------------------------------------------------------------- bảng dữ liệu
+// ---------------------------------------------------------------- data table
 
 /**
- * columns: [{key, label, get(row) -> giá trị để sort, render(row) -> html, align, title, hidden, nosort}]
+ * columns: [{key, label, get(row) -> value to sort by, render(row) -> html, align, title, hidden, nosort}]
  */
 class DataTable {
   constructor({ el, columns, rowKey, storageKey, onContextMenu, onOpen, onSelectionChange, rowClass }) {
@@ -344,7 +344,7 @@ class DataTable {
   }
 }
 
-// phím tắt chung cho bảng (không áp dụng khi đang gõ trong ô nhập)
+// shared table shortcuts (not applied while typing in an input)
 function bindTableKeys(table, handlers) {
   addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, select, dialog")) return;
@@ -365,7 +365,7 @@ function bindTableKeys(table, handlers) {
   });
 }
 
-// ---------------------------------------------------------------- tùy chọn quét video
+// ---------------------------------------------------------------- video scan options
 
 const SCAN_TYPES = [
   ["all", "Toàn bộ video"],
@@ -374,7 +374,7 @@ const SCAN_TYPES = [
   ["range", "Từ ngày … đến ngày"],
 ];
 
-/** Gắn bộ chọn kiểu quét vào el. Trả về { job() -> job hoặc null nếu nhập sai, label() } */
+/** Mounts the scan-mode picker into el. Returns { job() -> job, or null on invalid input; label() } */
 function mountScanOptions(el, storageKey) {
   const today = new Date().toISOString().slice(0, 10);
   const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
@@ -427,7 +427,7 @@ function mountScanOptions(el, storageKey) {
   };
 }
 
-/** Hộp thoại chọn kiểu quét. Trả về job hoặc null nếu hủy. */
+/** Dialog for choosing the scan mode. Returns a job, or null if cancelled. */
 function scanDialog(title) {
   return new Promise((resolve) => {
     const d = document.createElement("dialog");

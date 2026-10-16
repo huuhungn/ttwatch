@@ -1,12 +1,12 @@
-"""Đường dẫn dùng chung, chạy đúng cả khi chạy bằng Python lẫn khi đã đóng gói thành exe."""
+"""Shared paths that work both when run from Python and when packaged as an exe."""
 import os
 import sys
 from pathlib import Path
 
 APP_NAME = "ttwatch"
 FROZEN = getattr(sys, "frozen", False)
-# Khi chạy bằng PyInstaller, tài nguyên (static/) được giải nén vào _MEIPASS;
-# chạy bằng Python thì lấy cạnh file .py.
+# Under PyInstaller, resources (static/) are unpacked into _MEIPASS;
+# when run with Python they sit next to the .py file.
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 STATIC_DIR = RESOURCE_DIR / "static"
 
@@ -29,7 +29,7 @@ def _data_dir() -> Path:
         return d
     if not FROZEN:
         return Path(__file__).parent
-    # Bản đóng gói: lưu cạnh file exe; nếu thư mục đó không ghi được thì dùng LOCALAPPDATA.
+    # Packaged build: store next to the exe; if that folder is not writable, use LOCALAPPDATA.
     beside_exe = Path(sys.executable).parent / "TheoDoiKenhTiktok_data"
     if _writable(beside_exe):
         return beside_exe

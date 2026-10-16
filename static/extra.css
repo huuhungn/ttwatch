@@ -1,4 +1,4 @@
-/* Tab, tổng quan, biểu đồ, drawer, bảng lệnh, chủ đề, mật độ. */
+/* Tabs, overview, charts, drawer, command palette, theme, density. */
 
 :root {
   --c1: #fe2c55;
@@ -18,7 +18,7 @@
     --focus: #6aa0ff;
   }
 }
-/* Ép chủ đề theo lựa chọn của người dùng (Cài đặt → Giao diện). */
+/* Force the theme chosen by the user (Settings → Appearance). */
 :root[data-theme="light"] {
   --bg: #f5f6f8; --panel: #ffffff; --text: #1c2026; --muted: #5a626e; --border: #e3e6ea;
   --row-hover: #f2f5fa; --sel: #dce8ff; --sel-border: #9ab8f5; --up: #0d6e39; --down: #b92b2b; --accent-btn: #d91a3f;
@@ -31,7 +31,7 @@
   --c3: #9b87ff; --c4: #ffbe4d; --c5: #3ccf7d; --c6: #5ea1ff; --focus: #6aa0ff;
 }
 
-/* khả năng truy cập */
+/* accessibility */
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .btn:focus-visible, .ctx-item:focus-visible { outline-offset: 1px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -40,7 +40,7 @@
   .toast, .drawer, .drawer-shade { transition: none !important; }
 }
 
-/* mật độ */
+/* density */
 body.dense .grid th, body.dense .grid td { padding: 3px 8px; }
 body.dense .avatar { width: 22px; height: 22px; }
 body.dense .cover { width: 26px; height: 36px; }
@@ -76,7 +76,7 @@ body.dense .cover { width: 26px; height: 36px; }
 .banner[hidden] { display: none; }
 .banner .spacer { flex: 1; }
 
-/* thẻ số liệu */
+/* stat cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
@@ -108,7 +108,7 @@ table.mini { width: 100%; border-collapse: collapse; }
 .mini .clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .none-yet { color: var(--muted); padding: 10px 2px; font-size: 13px; }
 
-/* biểu đồ */
+/* charts */
 .chart { width: 100%; }
 .chart svg { display: block; }
 .chart .grid-l { stroke: var(--border); stroke-width: 1; }
@@ -148,7 +148,7 @@ table.mini { width: 100%; border-collapse: collapse; }
 .heat-c { aspect-ratio: 1; min-height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--c1) calc(var(--a) * 100%), var(--row-hover)); }
 .heat-c.none { background: var(--row-hover); opacity: 0.6; }
 
-/* drawer chi tiết kênh */
+/* channel detail drawer */
 .drawer-shade { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3); z-index: 40; opacity: 0; transition: opacity 0.18s; }
 .drawer-shade.on { opacity: 1; }
 .drawer {
@@ -169,7 +169,7 @@ table.mini { width: 100%; border-collapse: collapse; }
 .top-video .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .top-video .meta { color: var(--muted); font-size: 12px; }
 
-/* bảng lệnh + trợ giúp */
+/* command palette + help */
 .palette-shade { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
 .palette {
   width: min(560px, calc(100vw - 24px)); background: var(--panel); border: 1px solid var(--border);
@@ -184,7 +184,7 @@ table.mini { width: 100%; border-collapse: collapse; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
 .keys kbd { background: var(--row-hover); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font: 12px Consolas, monospace; }
 
-/* thông báo */
+/* notifications */
 .toast .act { margin-left: 12px; background: none; border: 0; color: #8ec5ff; font: inherit; font-weight: 700; cursor: pointer; }
 .alert-list { display: flex; flex-direction: column; }
 .alert-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--border); }
@@ -203,7 +203,7 @@ dialog.wide { width: min(860px, calc(100vw - 24px)); }
   .grid2 { grid-template-columns: 1fr; }
 }
 
-/* chip nhóm */
+/* group chips */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 8px; }
 .chips[hidden] { display: none; }
 .chip {
@@ -214,7 +214,7 @@ dialog.wide { width: min(860px, calc(100vw - 24px)); }
 .chip[aria-pressed="true"] { background: var(--sel); border-color: var(--sel-border); font-weight: 600; }
 .chip .n { color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
 
-/* cột # và username dính trái khi cuộn ngang */
+/* the # and username columns stick to the left when scrolling horizontally */
 .grid th[data-key="stt"], .grid td.col-stt { position: sticky; left: 0; min-width: 44px; width: 44px; max-width: 44px; z-index: 1; }
 .grid th[data-key="stt"] { z-index: 3; }
 .grid tbody td.col-stt { background: var(--panel); }

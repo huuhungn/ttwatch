@@ -1,8 +1,8 @@
-"""Kiểm thử giao diện thật bằng trình duyệt, không gọi TikTok.
+"""UI tests in a real browser; TikTok is never called.
 
-App chạy bằng uvicorn trên cổng ngẫu nhiên với DB mẫu và scraper giả (không luồng nền,
-không trình duyệt). Bỏ qua nếu máy không có Chrome/Edge/Chromium của Playwright.
-Ảnh chụp lưu ở docs/screens/ để xem nhanh sau mỗi lần chạy.
+The app runs under uvicorn on a random port with sample DB data and a fake scraper (no background
+threads, no browser). Skipped if the machine has no Chrome/Edge/Playwright Chromium.
+Screenshots are saved to docs/screens/ for a quick look after each run.
 """
 import socket
 import threading
@@ -57,7 +57,7 @@ class UiTest(unittest.TestCase):
         try:
             from playwright.sync_api import sync_playwright
         except ImportError:
-            raise unittest.SkipTest("không có playwright")
+            raise unittest.SkipTest("playwright is not installed")
         import app as appmod
         import uvicorn
 
@@ -84,7 +84,7 @@ class UiTest(unittest.TestCase):
         if cls.browser is None:
             cls.pw.stop()
             cls.server.should_exit = True
-            raise unittest.SkipTest("không có trình duyệt cho Playwright")
+            raise unittest.SkipTest("no browser available for Playwright")
         SHOTS.mkdir(parents=True, exist_ok=True)
 
     @classmethod
@@ -154,7 +154,7 @@ class UiTest(unittest.TestCase):
         p.click('#table tbody tr:has-text("Alpha")')
         p.keyboard.press("Space")
         p.wait_for_selector("#drChart svg path.ln")
-        p.wait_for_timeout(350)  # chờ drawer trượt vào hẳn trước khi chụp
+        p.wait_for_timeout(350)  # wait for the drawer to finish sliding in before taking the screenshot
         self.assertTrue(p.locator("#drawer.on").count())
         self.assertIn("View trung vị", p.locator("#drawer").inner_text())
         self.assertGreater(p.locator("#drawer .heat-c").count(), 100)
@@ -179,7 +179,7 @@ class UiTest(unittest.TestCase):
         p.wait_for_function("document.querySelectorAll('#table tbody tr').length === 2")
         time.sleep(1.6)
         self.assertFalse(self.db.channel_exists("gamma"))
-        self.db.add_channels(["gamma"])  # trả lại dữ liệu cho các test khác
+        self.db.add_channels(["gamma"])  # restore the data for the other tests
         self.db.set_status("gamma", "error", "Kênh không tồn tại hoặc bị khóa")
 
     def test_palette_and_theme(self):
@@ -216,7 +216,7 @@ class UiTest(unittest.TestCase):
         p.click('[data-cm="total_views"]')
         p.wait_for_function("document.querySelector('#cmpMetric .on').dataset.cm === 'total_views'")
         p.click('[data-cp="1"]')
-        # ở chế độ %, mọi kênh bắt đầu từ 0% nên các đường xuất phát cùng một điểm dù khác quy mô
+        # in % mode every channel starts at 0%, so the lines share a starting point regardless of scale
         p.wait_for_function("""() => {
             const ys = [...document.querySelectorAll('#cmpChart path.ln')].map(x => x.getAttribute('d').match(/^M[\d.]+,([\d.]+)/)[1]);
             return ys.length === 2 && ys[0] === ys[1];
@@ -237,7 +237,7 @@ class UiTest(unittest.TestCase):
         self.assertEqual((ch["group_name"], ch["note"]), ("Nhóm Z", "thử nhập"))
         with self.db._conn() as c:
             c.execute("DELETE FROM channels WHERE username='newone'")
-        # chế độ xem đã lưu
+        # saved views
         p.fill("#search", "alpha")
         p.click("#btnViews")
         p.click('.ctx-item:has-text("Lưu bộ lọc")')
@@ -270,7 +270,7 @@ class UiTest(unittest.TestCase):
         p.click('.ctx-item:has-text("Bỏ nhóm này")')
         p.wait_for_function("document.querySelectorAll('#groupChips .chip').length === 0 || document.querySelector('#groupChips').hidden")
         self.assertEqual(self.db.get_channel("alpha")["group_name"], "")
-        # trả lại dữ liệu cho các test khác
+        # restore the data for the other tests
         self.db.update_meta(["alpha", "beta"], "Nhóm A")
 
     def test_keyboard_only_navigation(self):
@@ -292,7 +292,7 @@ class UiTest(unittest.TestCase):
         self.assertEqual(p.locator("#table tbody tr.sel").count(), 2)
         p.keyboard.press("Space")
         p.wait_for_selector("#drawer.on")
-        # focus phải ở trong drawer, và trả về khi đóng
+        # focus must be inside the drawer, and returned when it closes
         self.assertTrue(p.evaluate("document.querySelector('#drawer').contains(document.activeElement)"))
         p.keyboard.press("Escape")
         p.wait_for_function("!document.querySelector('#drawer').classList.contains('on')")
@@ -345,7 +345,7 @@ class UiTest(unittest.TestCase):
             p.evaluate(f"document.documentElement.dataset.theme = '{theme}'")
             p.wait_for_timeout(50)
             bad = p.evaluate(script)
-            self.assertEqual(bad, [], f"tương phản dưới 4,5:1 ở giao diện {theme}")
+            self.assertEqual(bad, [], f"contrast below 4.5:1 in the {theme} theme")
 
     def test_videos_page_summary_and_star(self):
         p = self.page

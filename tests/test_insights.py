@@ -70,9 +70,9 @@ class SparklineTest(unittest.TestCase):
         db.add_channels(["a", "b", "c"])
         for i in range(100):
             _snap(db, "a", NOW - (100 - i) * 600, 100 + i)
-        _snap(db, "b", NOW - 100, 5)  # một điểm: không vẽ được đường
+        _snap(db, "b", NOW - 100, 5)  # a single point: no line can be drawn
         _snap(db, "c", NOW - 40 * DAY, 1)
-        _snap(db, "c", NOW - 39 * DAY, 2)  # ngoài cửa sổ 30 ngày
+        _snap(db, "c", NOW - 39 * DAY, 2)  # outside the 30-day window
         out = insights.sparklines(30, points=24, now=NOW)
         self.assertEqual(set(out), {"a"})
         self.assertLessEqual(len(out["a"]), 25)
@@ -96,13 +96,13 @@ class OverviewTest(unittest.TestCase):
         self.db = _fresh_db("overview")
         self.db.add_channels(["grow", "flat", "new", "broken", "old"])
         db = self.db
-        # grow: 1000 → 1500 trong 7 ngày; mốc 30 ngày ở 800.
+        # grow: 1000 → 1500 over 7 days; the 30-day baseline is 800.
         _snap(db, "grow", NOW - 29 * DAY, 800, views=100)
         _snap(db, "grow", NOW - 8 * DAY, 1000, views=200)
         _snap(db, "grow", NOW - 3600, 1500, views=900)
         _snap(db, "flat", NOW - 8 * DAY, 50, views=10)
         _snap(db, "flat", NOW - 3600, 50, views=10)
-        _snap(db, "new", NOW - 3600, 5, views=1)  # chỉ một snapshot: không có mức tăng
+        _snap(db, "new", NOW - 3600, 5, views=1)  # only one snapshot: no delta
         with db._conn() as c:
             c.execute("UPDATE channels SET followers=1500, updated_at=?, status='done' WHERE username='grow'", (NOW - 3600,))
             c.execute("UPDATE channels SET followers=50, updated_at=?, status='done' WHERE username='flat'", (NOW - 3600,))
@@ -133,7 +133,7 @@ class OverviewTest(unittest.TestCase):
         d30 = {r["username"]: r for r in g["d30"]["followers"]}
         self.assertEqual(d30["grow"]["delta"], 700)
         self.assertEqual(g["d7"]["followers"][0]["username"], "grow")
-        # Cửa sổ 1 ngày: snapshot trước đó là 8 ngày trước, vẫn dùng làm mốc.
+        # 1-day window: the previous snapshot is 8 days old and is still used as the baseline.
         d1 = {r["username"]: r for r in g["d1"]["followers"]}
         self.assertEqual(d1["grow"]["delta"], 500)
 
@@ -168,7 +168,7 @@ class ChannelInsightsTest(unittest.TestCase):
 
         db = _fresh_db("insights")
         db.add_channels(["demo"])
-        base = int(datetime(2026, 10, 12, 20, 0).timestamp())  # thứ Hai 20:00 giờ máy
+        base = int(datetime(2026, 10, 12, 20, 0).timestamp())  # Monday 20:00 machine local time
         plays = [500, 800, 900, 1000, 1200, 50_000]
         videos = [_video(f"v{i}", create_time=base + i * 7 * DAY, play=p) for i, p in enumerate(plays)]
         db.finish_scan("demo", videos, full=False)
@@ -259,7 +259,7 @@ class AlertsTest(unittest.TestCase):
         import scraper
 
         sent = []
-        scraper._notify_tray([{"kind": "followers", "text": "x"}])  # chưa có khay: không lỗi
+        scraper._notify_tray([{"kind": "followers", "text": "x"}])  # no tray yet: no error
         fake = types.ModuleType("tray")
         fake.notify = lambda msg, title=None: sent.append((msg, title))
         sys.modules["tray"] = fake

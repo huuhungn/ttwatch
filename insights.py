@@ -1,7 +1,7 @@
-"""Phân tích dữ liệu đã quét: lịch sử, tổng quan, insight, so sánh, cảnh báo, chế độ xem.
+"""Analysis of scanned data: history, overview, insights, comparison, alerts, saved views.
 
-Chỉ đọc (trừ cảnh báo và chế độ xem) và chỉ dùng bảng sẵn có của db.py, nên không đổi
-hành vi quét. Thời gian hiển thị theo múi giờ của máy chạy tool.
+Read-only (except alerts and saved views) and uses only the tables already defined in db.py,
+so scanning behaviour is unchanged. Displayed times follow the time zone of the machine running the tool.
 """
 import json
 import statistics
@@ -16,7 +16,7 @@ MAX_POINTS = 500
 
 
 def _downsample(rows, limit=MAX_POINTS):
-    """Giữ điểm đầu, điểm cuối và các điểm cách đều ở giữa."""
+    """Keep the first and last points and evenly spaced points in between."""
     if len(rows) <= limit:
         return rows
     step = (len(rows) - 1) / (limit - 1)
@@ -25,7 +25,7 @@ def _downsample(rows, limit=MAX_POINTS):
 
 
 def history(username, days=None, now=None):
-    """Chuỗi snapshot của một kênh, cũ → mới."""
+    """Snapshot series of one channel, oldest to newest."""
     key = username.lower()
     now = int(now or time.time())
     sql = "SELECT ts, followers, likes, video_count, total_views FROM snapshots WHERE username=?"
@@ -39,7 +39,7 @@ def history(username, days=None, now=None):
 
 
 def sparklines(days=30, points=24, now=None):
-    """{username: [followers...]} cho cột xu hướng; một truy vấn cho mọi kênh."""
+    """{username: [followers...]} for the trend column; one query for all channels."""
     now = int(now or time.time())
     out = {}
     with db._lock, db._conn() as c:
@@ -63,13 +63,13 @@ def compare(usernames, metric="followers", days=None, now=None):
     return {"metric": metric, "series": series}
 
 
-# ---------------------------------------------------------------- tổng quan
+# ---------------------------------------------------------------- overview
 
 def _delta_at(rows, cutoff, field):
-    """Mức tăng của `field` từ mốc `cutoff` đến snapshot mới nhất.
+    """Change in `field` from `cutoff` to the latest snapshot.
 
-    Mốc là snapshot cuối cùng trước hoặc tại cutoff; nếu kênh mới hơn cửa sổ thì lấy
-    snapshot sớm nhất trong cửa sổ (partial=True). Cần tối thiểu hai snapshot.
+    The baseline is the last snapshot at or before cutoff; if the channel is newer than the
+    window, the earliest snapshot in the window is used (partial=True). Needs at least two snapshots.
     """
     if len(rows) < 2:
         return None
@@ -98,7 +98,7 @@ def overview(now=None, stale_days=3, top=10):
             (now - 31 * DAY,),
         ):
             snaps.setdefault(r["username"], []).append(dict(r))
-        # Mốc trước cửa sổ 30 ngày, để kênh có lịch sử dài vẫn tính được mức tăng 30 ngày.
+        # Baseline just before the 30-day window, so channels with a long history still get a 30-day delta.
         for r in c.execute(
             """SELECT s.username, s.ts, s.followers, s.likes, s.total_views FROM snapshots s
                WHERE s.ts < ? AND s.id = (SELECT id FROM snapshots x WHERE x.username = s.username AND x.ts < ?
@@ -141,7 +141,7 @@ def overview(now=None, stale_days=3, top=10):
         by_views.sort(key=lambda r: r["delta"], reverse=True)
         gainers[label] = {"followers": by_followers[:top], "views": by_views[:top]}
 
-    # Tổng follow/view theo ngày: mỗi kênh lấy snapshot cuối ngày và giữ nguyên đến khi có mốc mới.
+    # Daily follower/view totals: each channel contributes its end-of-day snapshot, carried forward until a new one appears.
     day_keys = sorted({r["ts"] // DAY for rows in snaps.values() for r in rows})
     series = []
     last_value = {}
@@ -182,7 +182,7 @@ def overview(now=None, stale_days=3, top=10):
     }
 
 
-# ---------------------------------------------------------------- insight một kênh
+# ---------------------------------------------------------------- single-channel insights
 
 def _bucket(play):
     for limit, label in ((1_000, "<1k"), (10_000, "1k–10k"), (100_000, "10k–100k"), (1_000_000, "100k–1M")):
@@ -237,7 +237,7 @@ def channel_insights(username, now=None):
                 "cover": v["cover"]}
 
     top = sorted(vids, key=lambda v: v["play"] or 0, reverse=True)[:5]
-    # "Vượt trội": gấp đôi trung vị, và đủ nhiều video để trung vị có nghĩa.
+    # Outperformers: at least twice the median, and enough videos for the median to be meaningful.
     outperformers = [brief(v) for v in vids if len(vids) >= 5 and median and (v["play"] or 0) >= 2 * median]
     best_hour = None
     flat = [(len(c), r, h) for r, row in enumerate(cells) for h, c in enumerate(row) if len(c) >= 2]
@@ -259,7 +259,7 @@ def channel_insights(username, now=None):
     }
 
 
-# ---------------------------------------------------------------- cảnh báo
+# ---------------------------------------------------------------- alerts
 
 ALERT_DEFAULTS = {"alerts_enabled": "1", "alert_follow_pct": "5", "alert_new_video": "1"}
 
@@ -272,12 +272,12 @@ def _alert_settings():
 def add_alert(key, kind, text, ts=None):
     with db._lock, db._conn() as c:
         c.execute("INSERT INTO alerts(username, kind, text, ts) VALUES(?,?,?,?)", (key, kind, text, int(ts or time.time())))
-        # Giữ bảng gọn: tối đa 500 dòng gần nhất.
+        # Keep the table small: at most the 500 most recent rows.
         c.execute("DELETE FROM alerts WHERE id NOT IN (SELECT id FROM alerts ORDER BY id DESC LIMIT 500)")
 
 
 def check_alerts(key):
-    """Gọi sau mỗi lần quét thành công; trả về danh sách cảnh báo vừa tạo."""
+    """Call after each successful scan; returns the alerts just created."""
     cfg = _alert_settings()
     if cfg["alerts_enabled"] != "1":
         return []
@@ -285,7 +285,7 @@ def check_alerts(key):
         snaps = [dict(r) for r in c.execute(
             "SELECT ts, followers, video_count FROM snapshots WHERE username=? ORDER BY ts DESC, id DESC LIMIT 2", (key,))]
         if len(snaps) < 2:
-            return []  # lần quét đầu tiên: mọi thứ đều "mới", không cảnh báo
+            return []  # first scan: everything is "new", so no alert
         cur, prev = snaps
         new_videos = [dict(r) for r in c.execute(
             "SELECT id, description FROM videos WHERE username=? AND prev_ts IS NULL AND updated_at >= ? "
@@ -328,7 +328,7 @@ def mark_alerts_read(ids=None):
             c.execute("UPDATE alerts SET read=1")
 
 
-# ---------------------------------------------------------------- chế độ xem đã lưu
+# ---------------------------------------------------------------- saved views
 
 VIEW_PREFIX = "view:"
 
@@ -360,10 +360,10 @@ def delete_view(name):
         c.execute("DELETE FROM settings WHERE key=?", (VIEW_PREFIX + (name or "").strip(),))
 
 
-# ---------------------------------------------------------------- tự làm mới nâng cao
+# ---------------------------------------------------------------- advanced auto-refresh
 
 def in_quiet_hours(hour, start, end):
-    """start/end là giờ nguyên 0–23 (chuỗi rỗng = tắt). Khoảng có thể qua nửa đêm."""
+    """start/end are whole hours 0-23 (empty string = off). The range may wrap past midnight."""
     try:
         s, e = int(start), int(end)
     except (TypeError, ValueError):
@@ -374,7 +374,7 @@ def in_quiet_hours(hour, start, end):
 
 
 def auto_job(mode):
-    """Job cho lần tự làm mới theo cài đặt `auto_refresh_mode`."""
+    """Job for an auto-refresh run, based on the `auto_refresh_mode` setting."""
     if mode == "scan10":
         return {"mode": "scan", "limit": 10}
     return {"mode": "quick"}
