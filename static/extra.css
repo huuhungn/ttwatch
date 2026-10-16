@@ -231,3 +231,4 @@ dialog.wide { width: min(860px, calc(100vw - 24px)); }
 @media (max-width: 720px) {
   .add-box textarea { height: 84px; }
 }
+.drawer:focus { outline: none; }

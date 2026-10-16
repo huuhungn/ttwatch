@@ -192,6 +192,8 @@ function openDrawer(target) {
   requestAnimationFrame(() => {
     $("#drawerShade").classList.add("on");
     $("#drawer").classList.add("on");
+    // Focus vào ngăn ngay (không đợi dữ liệu tải xong) để bàn phím không kẹt ở bảng phía sau.
+    $("#drawer").focus({ preventScroll: true });
   });
   $("#drawer").setAttribute("aria-hidden", "false");
   paintDrawer();
