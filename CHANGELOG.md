@@ -1,5 +1,11 @@
 # Lịch sử thay đổi
 
+## 0.1.2 — 2026-10-16
+
+### Thêm
+- Mỗi zip phát hành có chứng thực nguồn gốc (GitHub Artifact Attestation, Sigstore): kiểm tra bằng `gh attestation verify <zip> -R huuhungn/ttwatch`.
+- Bước ký Authenticode bằng SignPath trong `release.yml`, tự bật khi repo có cấu hình SignPath (xem `docs/code-signing.md`); chưa cấu hình thì bỏ qua.
+
 ## 0.1.1 — 2026-10-16
 
 ### Thêm
