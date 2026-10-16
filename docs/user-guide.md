@@ -65,7 +65,7 @@ Bấm đúp một kênh (hoặc Enter). Có thẻ tóm tắt, phần **Phân tí
 
 ## Cài đặt
 
-- **Hiện cửa sổ trình duyệt**: bật khi TikTok hiện captcha; giải một lần, tool ghi nhớ.
+- **Hiện cửa sổ trình duyệt**: luôn hiện cửa sổ trình duyệt của tool. Không bắt buộc để giải captcha: khi TikTok đòi xác minh, tool tự đưa cửa sổ lên, báo ở khay và chờ tối đa 3 phút; giải xong tool tự quét tiếp và ghi nhớ phiên đã xác minh.
 - **Tự động cập nhật**: chu kỳ phút, kiểu (nhanh hoặc quét 10 video), giờ yên lặng (có thể qua nửa đêm).
 - **Cảnh báo**: bật/tắt, ngưỡng follow, video mới.
 - **Giao diện**: sáng/tối/theo hệ thống, bảng gọn.
@@ -74,7 +74,7 @@ Bấm đúp một kênh (hoặc Enter). Có thẻ tóm tắt, phần **Phân tí
 
 | Thông báo | Cách xử lý |
 |---|---|
-| Cần xác minh (captcha) | Bật *Hiện cửa sổ trình duyệt*, giải captcha, quét lại. |
+| Cần xác minh (captcha) | Cửa sổ trình duyệt tự hiện: giải captcha trong 3 phút, tool tự quét tiếp. Nếu quá hạn, tool báo lỗi và 10 phút sau mới hiện lại; hãy quét lại khi bạn có mặt. |
 | Kênh không tồn tại hoặc bị khóa | Kiểm tra lại username. |
 | Bị dừng giữa chừng | Tool bị tắt khi đang quét; bấm *Quét lại các kênh này* ở thanh vàng. |
 | Hồ sơ trình duyệt đang bị giữ | Tắt cửa sổ trình duyệt/tool khác đang dùng cùng thư mục dữ liệu. |

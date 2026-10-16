@@ -37,6 +37,7 @@ def _make_scraper():
     scraper._pw = None
     scraper._ctx = None
     scraper._ctx_visible = None
+    scraper._captcha_gave_up = 0.0
     scraper.RETRY_DELAYS = (0, 0)
     return scraper
 
@@ -758,6 +759,95 @@ class CaptchaTest(unittest.TestCase):
         self.assertNotIn("Lỗi:", blocked["message"])
         self.assertIsNone(blocked["last_scan_at"])
         self.assertEqual(db.get_channel("ok")["status"], "done")
+
+
+class _Cdp:
+    def __init__(self, page):
+        self.page = page
+
+    def send(self, method, params=None):
+        if method == "Browser.getWindowForTarget":
+            return {"windowId": 7}
+        if method == "Browser.setWindowBounds":
+            onscreen = params["bounds"]["left"] >= 0
+            self.page.moves.append(onscreen)
+            self.page.onscreen = onscreen
+        return {}
+
+    def detach(self):
+        pass
+
+
+class _WindowContext:
+    def __init__(self, page):
+        self.page = page
+
+    def new_cdp_session(self, page):
+        return _Cdp(self.page)
+
+
+class _SolvablePage(_Page):
+    """Trang có captcha; người dùng "giải" ngay khi cửa sổ được đưa lên màn hình."""
+    html = '<div id="captcha-container"></div>'
+
+    def __init__(self, payloads=(), solves=True):
+        super().__init__(payloads)
+        self.moves = []
+        self.onscreen = False
+        self.solves = solves
+        self.context = _WindowContext(self)
+        self.brought_to_front = 0
+
+    def bring_to_front(self):
+        self.brought_to_front += 1
+
+    def wait_for_timeout(self, ms):
+        if self.onscreen and self.solves and ms == 2000:
+            self.html = ""
+            if not self._payloads:
+                self._payloads.append(_item_list(("9", 1, 1)))
+
+
+class ManualCaptchaTest(unittest.TestCase):
+    def test_window_shown_then_hidden_when_solved(self):
+        db = _fresh_db("captcha-solved")
+        db.add_channels(["demo"])
+        scraper = _make_scraper()
+        page = _SolvablePage()
+        self.assertTrue(scraper._wait_captcha_solved(page, "demo"))
+        self.assertEqual(page.moves, [True, False])
+        self.assertEqual(page.brought_to_front, 1)
+        self.assertIn("captcha", db.get_channel("demo")["message"])
+
+    def test_gives_up_then_cools_down_without_reopening_window(self):
+        scraper = _make_scraper()
+        scraper.CAPTCHA_WAIT_STEPS = 3
+        page = _SolvablePage(solves=False)
+        _fresh_db("captcha-giveup").add_channels(["demo"])
+        self.assertFalse(scraper._wait_captcha_solved(page, "demo"))
+        self.assertEqual(page.moves, [True, False])
+        self.assertFalse(scraper._wait_captcha_solved(page, "demo"))
+        self.assertEqual(page.moves, [True, False])  # không bật cửa sổ lần nữa trong thời gian nghỉ
+
+    def test_no_wait_when_window_cannot_be_moved(self):
+        scraper = _make_scraper()
+        page = _Page([])
+        page.html = '<div id="captcha-container"></div>'
+        _fresh_db("captcha-nomove").add_channels(["demo"])
+        self.assertFalse(scraper._wait_captcha_solved(page, "demo"))
+        self.assertEqual(scraper._captcha_gave_up, 0.0)
+
+    def test_scan_resumes_after_user_solves(self):
+        db = _fresh_db("captcha-resume")
+        db.add_channels(["demo"])
+        scraper = _make_scraper()
+        page = _SolvablePage()
+        scraper._browser = lambda: _Context(page)
+        scraper._execute("demo", __import__("scraper").normalize_job({"mode": "quick"}))
+        ch = db.get_channel("demo")
+        self.assertEqual(ch["status"], "done", ch["message"])
+        self.assertEqual(page.moves, [True, False])
+        self.assertEqual([v["id"] for v in db.list_videos("demo")], ["9"])
 
 
 class RetryTest(unittest.TestCase):

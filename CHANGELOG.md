@@ -1,5 +1,11 @@
 # Lịch sử thay đổi
 
+## Chưa phát hành
+
+### Thêm
+- Giấy phép MIT (`LICENSE`, cũng nằm trong file zip phát hành).
+- Khi TikTok đòi captcha, tool tự đưa cửa sổ trình duyệt lên màn hình, báo ở khay và chờ tối đa 3 phút để bạn giải; giải xong tool tự quét tiếp rồi cất cửa sổ đi. Bỏ cuộc thì nghỉ 10 phút trước khi hiện lại.
+
 ## 0.1.0 — 2026-10-16
 
 ### Thêm
@@ -26,4 +32,4 @@
 - Kênh bị coi là lỗi khi TikTok chuyển trang giữa lúc đọc dữ liệu; lỗi mạng tạm thời được thử lại; số liệu ER/tăng trưởng tính cộng dồn đúng.
 
 ### Kiểm thử
-- Từ 24 lên 99 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.
+- Từ 24 lên 103 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.

@@ -32,6 +32,8 @@ ZERO_WIDTH_RE = re.compile("[\u200b\u200c\u200d\u2060\ufeff]")
 WRAP_OPEN = "([{<\"'\u201c\u2018\u00ab"
 WRAP_CLOSE = ")]}>\"'\u201d\u2019\u00bb"
 TRAILING_PUNCT = "!?:\u2026"
+CAPTCHA_UNSOLVED = ("Bị captcha – chưa giải được. Quét lại để tool hiện cửa sổ trình duyệt cho bạn giải "
+                    "(hoặc bật 'Hiện cửa sổ trình duyệt' trong Cài đặt)")
 # Lỗi tạm thời (mạng chậm, TikTok chuyển trang, trình duyệt bị đóng) được quét lại sau
 # các khoảng chờ trong Scraper.RETRY_DELAYS; lỗi cố định thì báo ngay.
 TRANSIENT_MARKERS = (
@@ -43,6 +45,10 @@ TRANSIENT_MARKERS = (
 )
 
 
+class CaptchaSolved(Exception):
+    """Người dùng vừa giải captcha giữa chừng: quét lại kênh từ đầu với phiên đã được xác minh."""
+
+
 class ProfileBusyError(RuntimeError):
     """Profile trình duyệt đang bị process khác giữ: thử lại ngay không có ích."""
 
@@ -52,11 +58,15 @@ def _first_line(exc):
     return lines[0] if lines else type(exc).__name__
 
 
-def _notify_tray(alerts):
-    """Hiện cảnh báo ở khay nếu khay đang chạy (không tự import tray để khỏi kéo pystray vào)."""
+def _notify_tray_text(text, title="Cảnh báo kênh TikTok"):
+    """Hiện bóng thông báo ở khay nếu khay đang chạy (không tự import tray để khỏi kéo pystray vào)."""
     tray = sys.modules.get("tray")
-    if alerts and tray is not None:
-        tray.notify("\n".join(a["text"] for a in alerts[:3]), "Cảnh báo kênh TikTok")
+    if text and tray is not None:
+        tray.notify(text, title)
+
+
+def _notify_tray(alerts):
+    _notify_tray_text("\n".join(a["text"] for a in alerts[:3]) if alerts else "")
 
 
 def _is_transient(exc):
@@ -138,6 +148,8 @@ def parse_input(text):
 
 class Scraper:
     RETRY_DELAYS = (5, 15)
+    CAPTCHA_WAIT_STEPS = 90        # x 2 giây = chờ người dùng giải captcha tối đa 3 phút
+    CAPTCHA_COOLDOWN = 600         # sau khi bỏ cuộc, 10 phút không bật cửa sổ lại để khỏi làm phiền
 
     def __init__(self):
         self.jobs = queue.Queue()
@@ -147,6 +159,7 @@ class Scraper:
         self._pw = None
         self._ctx = None
         self._ctx_visible = None
+        self._captcha_gave_up = 0.0
         threading.Thread(target=self._run, daemon=True).start()
         threading.Thread(target=self._auto_refresh_loop, daemon=True).start()
 
@@ -224,6 +237,12 @@ class Scraper:
                         _notify_tray(insights.check_alerts(key))
                     except Exception:
                         traceback.print_exc()  # cảnh báo hỏng không được làm hỏng lần quét
+                return
+            except CaptchaSolved:
+                if attempt < attempts:
+                    db.set_status(key, "running", "Đã giải captcha, đang quét lại kênh")
+                    continue
+                db.set_status(key, "error", "Đã giải captcha nhưng chưa quét xong – hãy quét lại kênh")
                 return
             except Exception as e:
                 traceback.print_exc()
@@ -323,7 +342,9 @@ class Scraper:
                 page.wait_for_timeout(500)
             if not raw:
                 if self._has_captcha(page):
-                    db.set_status(key, "error", "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha")
+                    if self._wait_captcha_solved(page, key):
+                        raise CaptchaSolved()
+                    db.set_status(key, "error", CAPTCHA_UNSOLVED)
                 else:
                     db.set_status(key, "error", "Không đọc được trang kênh")
                 return
@@ -405,7 +426,9 @@ class Scraper:
                 if items or (responses and not has_more):
                     break
             if not items and video_count and self._has_captcha(page):
-                db.set_status(key, "error", "Bị captcha – bật 'Hiện trình duyệt' trong Cài đặt rồi giải captcha")
+                if self._wait_captcha_solved(page, key):
+                    raise CaptchaSolved()
+                db.set_status(key, "error", CAPTCHA_UNSOLVED)
                 return
 
             if job["mode"] == "scan":
@@ -414,7 +437,7 @@ class Scraper:
                     page.mouse.wheel(0, 3000)
                     page.wait_for_timeout(1200)
                     idle = 0 if collect() else idle + 1
-                    if self._has_captcha(page):
+                    if self._has_captcha(page) and not self._wait_captcha_solved(page, key):
                         page.wait_for_timeout(3000)
 
             videos = sorted((_video_row(it, key) for it in items), key=lambda v: v["create_time"], reverse=True)
@@ -485,6 +508,53 @@ class Scraper:
         if missing:
             note += f" – {missing} video không lấy được (đã xóa, bị ẩn hoặc bị chặn)"
         db.set_status(key, "done", note)
+
+    def _window_to(self, page, onscreen):
+        """Đưa cửa sổ trình duyệt lên màn hình hoặc cất ra ngoài; False nếu trình duyệt không cho đổi."""
+        try:
+            cdp = page.context.new_cdp_session(page)
+            try:
+                win = cdp.send("Browser.getWindowForTarget")["windowId"]
+                pos = {"left": 80, "top": 60} if onscreen else {"left": -32000, "top": -32000}
+                cdp.send("Browser.setWindowBounds", {"windowId": win, "bounds": {**pos, "windowState": "normal"}})
+            finally:
+                cdp.detach()
+            return True
+        except Exception:
+            return False
+
+    def _wait_captcha_solved(self, page, key):
+        """Hiện cửa sổ (nếu đang ẩn), báo ở khay và chờ người dùng giải captcha. True nếu captcha đã hết.
+
+        Phiên đã xác minh nằm trong hồ sơ trình duyệt nên không phải giải lại ở các lần sau. Bỏ cuộc
+        thì nghỉ CAPTCHA_COOLDOWN giây trước khi hiện cửa sổ lần nữa (tự cập nhật ban đêm không bật
+        cửa sổ liên tục).
+        """
+        if time.time() - self._captcha_gave_up < self.CAPTCHA_COOLDOWN:
+            return False
+        was_visible = bool(self._ctx_visible)
+        if not was_visible and not self._window_to(page, True):
+            return False
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        msg = "TikTok yêu cầu xác minh: cửa sổ trình duyệt đã hiện, hãy giải captcha trong 3 phút (tool sẽ tự chạy tiếp)"
+        db.set_status(key, "running", msg)
+        _notify_tray_text(msg, "Cần giải captcha")
+        solved = False
+        try:
+            for _ in range(self.CAPTCHA_WAIT_STEPS):
+                page.wait_for_timeout(2000)
+                if not self._has_captcha(page):
+                    solved = True
+                    break
+        finally:
+            if not was_visible:
+                self._window_to(page, False)
+        if not solved:
+            self._captcha_gave_up = time.time()
+        return solved
 
     @staticmethod
     def _has_captcha(page):

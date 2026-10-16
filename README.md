@@ -55,3 +55,7 @@ Cần `uv` trong PATH; script tự cài PyInstaller vào `.venv`. `build/`, `dis
 | `instance_lock.py` | khóa một bản chạy trên thư mục dữ liệu |
 | `tray.py`, `paths.py` | khay hệ thống, đường dẫn dữ liệu |
 | `static/` | giao diện (không cần npm): `main.js` bảng kênh, `panels.js` các màn mới, `charts.js` biểu đồ SVG |
+
+## Giấy phép
+
+MIT, xem `LICENSE`. Các thư viện bên thứ ba (FastAPI, Playwright, pystray, Pillow, openpyxl…) giữ giấy phép riêng của chúng. Tool chỉ đọc dữ liệu công khai; bạn tự chịu trách nhiệm tuân thủ điều khoản của TikTok khi dùng.

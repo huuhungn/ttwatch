@@ -8,7 +8,7 @@ let firstLoad = true;
 // Gợi ý cách xử lý cho các lỗi hay gặp; thông báo gốc vẫn hiện nguyên văn.
 function errorHint(msg) {
   const m = (msg || "").toLowerCase();
-  if (m.includes("captcha")) return "TikTok yêu cầu xác minh. Bật \"Hiện cửa sổ trình duyệt\" trong Cài đặt, giải captcha một lần rồi quét lại.";
+  if (m.includes("captcha")) return "TikTok yêu cầu xác minh. Quét lại: cửa sổ trình duyệt sẽ tự hiện để bạn giải captcha (hoặc bật \"Hiện cửa sổ trình duyệt\" trong Cài đặt); giải xong tool tự chạy tiếp.";
   if (m.includes("không tồn tại")) return "Kênh không tồn tại hoặc bị khóa – kiểm tra lại username.";
   if (m.includes("bị dừng")) return "Lần chạy trước bị tắt giữa chừng – hãy cập nhật lại.";
   if (m.includes("timeout") || m.includes("net::") || m.includes("đã thử")) return "Lỗi mạng hoặc TikTok phản hồi chậm – thử lại sau.";
