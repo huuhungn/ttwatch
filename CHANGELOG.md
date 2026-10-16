@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — unreleased
 
 ### Added
+- **Start with Windows.** A *Tự chạy cùng Windows* checkbox in *Cài đặt* (off by default) adds one per-user entry to `HKCU\...\Run`, so no administrator rights and no scheduled task are needed. Windows starts the tool with `--background`: it comes up in the tray and keeps scanning and alerting, without opening the browser page. The entry is removed when you untick the box and is repaired at the next start if the install folder was moved. If you disabled it in Task Manager → Startup apps, the setting says so and ticking the box again turns it back on; the automatic repair never overrides that choice. Only the exe can do this; from source the box is disabled with the reason (`GET`/`POST /api/autostart`, setting `autostart`).
 - **Scan pacing.** The tool rests a random few seconds between channels instead of a fixed 1.5 seconds, and scroll and video-page waits vary a little too. When TikTok pushes back (a captcha, an empty video list for a channel that has videos, an unreadable page, a timeout that survives the retries, or TikTok stopping mid-scan) the tool rests 45 seconds (2 minutes after a captcha), doubling with every further trouble in a row up to 15 minutes at every pace, and returns to the normal pace after the first clean scan (troubles more than 30 minutes apart count as separate incidents, and a captcha you solve yourself does not slow the queue down). The bar under the header shows the countdown with a *Quét tiếp ngay* button (`POST /api/worker/resume`) to skip it.
 - A *Nhịp quét* setting (`scan_pace`): normal (default), slow, or fast (the old fixed pause, no backing off).
 

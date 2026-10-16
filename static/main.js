@@ -473,6 +473,7 @@ $("#btnSettings").onclick = async () => {
   $("#setUpdCheck").checked = s.update_check !== "0";
   $("#setUpdAuto").checked = s.update_auto !== "0";
   renderUpdateInfo();
+  loadAutostart();
   api("/api/backups").then((b) => {
     const n = b.backups.length;
     $("#backupInfo").textContent = n
@@ -481,6 +482,23 @@ $("#btnSettings").onclick = async () => {
   }).catch(() => {});
   $("#dlgSettings").showModal();
 };
+let autostartState = null;
+async function loadAutostart() {
+  const box = $("#setAutostart");
+  const info = $("#autostartInfo");
+  try {
+    autostartState = await api("/api/autostart");
+  } catch {
+    autostartState = { supported: false, reason: "Không đọc được trạng thái khởi động cùng Windows." };
+  }
+  const s = autostartState;
+  box.disabled = !s.supported;
+  box.checked = !!(s.supported && s.enabled && !s.blocked);
+  info.textContent = !s.supported ? s.reason
+    : s.blocked ? "Windows đang tắt mục này trong Task Manager → Khởi động. Tick và Lưu để bật lại."
+    : s.stale ? "Mục khởi động đang trỏ tới vị trí cũ; bấm Lưu để cập nhật." : "";
+}
+
 $("#btnBackup").onclick = () => (location.href = "/api/export/backup");
 $("#btnAbout").onclick = () => $("#dlgAbout").showModal();
 $("#aboutClose").onclick = () => $("#dlgAbout").close();
@@ -495,6 +513,17 @@ $("#setSave").onclick = async () => {
   localStorage.setItem("theme", $("#setTheme").value);
   localStorage.setItem("dense", $("#setDense").checked ? "1" : "0");
   applyLook();
+  if (autostartState?.supported) {
+    const want = $("#setAutostart").checked;
+    const needs = want ? !autostartState.enabled || autostartState.blocked || autostartState.stale : autostartState.enabled;
+    if (needs) {
+      try {
+        await api("/api/autostart", { enabled: want });
+      } catch (e) {
+        toast(e.message || "Không đổi được mục khởi động cùng Windows");
+      }
+    }
+  }
   await api("/api/settings", {
     show_browser: $("#setShowBrowser").checked ? "1" : "0",
     auto_refresh_minutes: Math.max(0, parseInt($("#setAuto").value) || 0),

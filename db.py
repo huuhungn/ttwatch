@@ -114,6 +114,8 @@ DEFAULT_SETTINGS = {
     "alert_new_video": "1",
     # Scan pacing (pacing.py): "off" | "normal" | "slow".
     "scan_pace": "normal",
+    # Start with Windows (autostart.py); the registry entry is written through /api/autostart.
+    "autostart": "0",
     # Self-update (updater.py): check GitHub, install when idle, the version the user skipped,
     # and the version whose automatic install failed (not retried on its own).
     "update_check": "1",

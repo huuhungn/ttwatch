@@ -23,6 +23,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from pydantic import BaseModel
 
+import autostart
 import db
 import insights
 import instance_lock
@@ -38,6 +39,7 @@ _instance = None
 
 scraper: Scraper = None
 updates: updater.UpdateManager = None
+startup: autostart.Autostart = None
 app = FastAPI(title=APP_NAME, version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -172,6 +174,44 @@ def _updates() -> updater.UpdateManager:
     if updates is None:  # only before main() ran, i.e. in tests
         updates = _build_updates()
     return updates
+
+
+def _startup() -> autostart.Autostart:
+    global startup
+    if startup is None:
+        startup = autostart.Autostart()
+    return startup
+
+
+class AutostartReq(BaseModel):
+    enabled: bool
+
+
+def _sync_autostart():
+    """Keep the Windows startup entry in line with the setting. Never fatal: the tool must start without it."""
+    try:
+        _startup().sync(db.get_setting("autostart") == "1")
+    except Exception as exc:
+        print(f"Không cập nhật được mục khởi động cùng Windows: {exc}")
+
+
+@app.get("/api/autostart")
+def autostart_state():
+    """Whether the tool starts with Windows (and why not, when it cannot)."""
+    try:
+        return _startup().snapshot()
+    except autostart.AutostartError as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.post("/api/autostart")
+def autostart_set(req: AutostartReq):
+    try:
+        state = _startup().enable() if req.enabled else _startup().disable()
+    except autostart.AutostartError as exc:
+        raise HTTPException(400, str(exc))
+    db.set_settings({"autostart": "1" if req.enabled else "0"})
+    return state
 
 
 @app.get("/api/update")
@@ -513,7 +553,7 @@ def _tray_check_update():
 
 def main():
     global PORT, scraper, server, _instance, updates
-    open_browser = not os.environ.get("NO_OPEN")
+    open_browser = autostart.should_open_browser()
     # Another copy of the tool is already running (same default data folder): just reopen the page
     # instead of starting a second copy that would fight over the browser and the database.
     # Skipped when TDK_DATA_DIR is set (separate run, tests).
@@ -536,6 +576,7 @@ def main():
         return
 
     db.init()
+    _sync_autostart()
     scraper = Scraper()
     updates = _build_updates()
     updates.start()

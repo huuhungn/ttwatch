@@ -483,6 +483,66 @@ class UiTest(unittest.TestCase):
         finally:
             self.db.set_settings({"scan_pace": "normal"})
 
+    # ------------------------------------------------------------ start with Windows
+
+    def test_autostart_is_disabled_with_a_reason_when_running_from_source(self):
+        p = self.page
+        self.open_home()
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        p.wait_for_function("document.querySelector('#autostartInfo').textContent !== ''")
+        self.assertTrue(p.locator("#setAutostart").is_disabled())
+        self.assertFalse(p.locator("#setAutostart").is_checked())
+        self.assertIn("mã nguồn", p.locator("#autostartInfo").inner_text())
+
+    def _fake_autostart(self, **state):
+        base = {"supported": True, "reason": None, "enabled": False, "stale": False, "blocked": False}
+        base.update(state)
+        posts = []
+
+        def handle(route):
+            if route.request.method == "POST":
+                posts.append(route.request.post_data_json)
+                base["enabled"] = posts[-1]["enabled"]
+                base["blocked"] = False
+            route.fulfill(json=base)
+
+        self.page.route("**/api/autostart", handle)
+        return posts
+
+    def test_autostart_checkbox_is_saved_through_its_own_endpoint(self):
+        p = self.page
+        posts = self._fake_autostart()
+        self.open_home()
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        p.wait_for_function("!document.querySelector('#setAutostart').disabled")
+        self.assertFalse(p.locator("#setAutostart").is_checked())
+        p.click("#setSave")   # nothing changed: no request
+        p.wait_for_function("!document.querySelector('#dlgSettings').open")
+        self.assertEqual(posts, [])
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        p.wait_for_function("!document.querySelector('#setAutostart').disabled")
+        p.check("#setAutostart")
+        p.click("#setSave")
+        p.wait_for_function("!document.querySelector('#dlgSettings').open")
+        self.assertEqual(posts, [{"enabled": True}])
+
+    def test_autostart_blocked_in_task_manager_is_explained_and_can_be_switched_back_on(self):
+        p = self.page
+        posts = self._fake_autostart(enabled=True, blocked=True)
+        self.open_home()
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        p.wait_for_function("document.querySelector('#autostartInfo').textContent !== ''")
+        self.assertIn("Task Manager", p.locator("#autostartInfo").inner_text())
+        self.assertFalse(p.locator("#setAutostart").is_checked())
+        p.check("#setAutostart")
+        p.click("#setSave")
+        p.wait_for_function("!document.querySelector('#dlgSettings').open")
+        self.assertEqual(posts, [{"enabled": True}])
+
 
 if __name__ == "__main__":
     unittest.main()
