@@ -26,4 +26,4 @@
 - Kênh bị coi là lỗi khi TikTok chuyển trang giữa lúc đọc dữ liệu; lỗi mạng tạm thời được thử lại; số liệu ER/tăng trưởng tính cộng dồn đúng.
 
 ### Kiểm thử
-- Từ 24 lên 97 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.
+- Từ 24 lên 99 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.
