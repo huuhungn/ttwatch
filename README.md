@@ -1,12 +1,12 @@
-# ttwatch — theo dõi kênh TikTok công khai
+# ttwatch — public TikTok channel tracker
 
-Công cụ chạy trên máy bạn: nhập danh sách kênh TikTok, tool đọc số follow, tim, video của từng kênh, lưu lịch sử vào SQLite, vẽ biểu đồ, so sánh kênh và báo khi có thay đổi lớn. Python (FastAPI + Playwright), giao diện web local không cần npm, biểu tượng ở khay hệ thống.
+A tool that runs on your own machine: enter a list of TikTok channels and it reads each channel's followers, likes and videos, stores the history in SQLite, draws charts, compares channels and alerts you to large changes. Python (FastAPI + Playwright), a local web UI that needs no npm, and a system tray icon. The UI language is Vietnamese.
 
-Tải bản chạy sẵn cho Windows ở mục [Releases](https://github.com/huuhungn/ttwatch/releases) (giải nén rồi chạy `ttwatch.exe`). Hướng dẫn dùng: `docs/user-guide.md`; lịch sử thay đổi: `CHANGELOG.md`.
+Download the prebuilt Windows version from [Releases](https://github.com/huuhungn/ttwatch/releases) (unzip and run `ttwatch.exe`). User guide: `docs/user-guide.md`; change history: `CHANGELOG.md`.
 
-Tên dữ liệu và biến môi trường (`TheoDoiKenhTiktok_data`, `TDK_DATA_DIR`) giữ nguyên từ các bản trước để không mất dữ liệu đã quét.
+The data folder and environment variable names (`TheoDoiKenhTiktok_data`, `TDK_DATA_DIR`) are kept from earlier versions so that previously scanned data is not lost.
 
-## Chạy
+## Run
 
 ```bash
 uv venv --python 3.13 .venv
@@ -15,26 +15,26 @@ uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 .venv/Scripts/python app.py
 ```
 
-Trang mở tại `http://127.0.0.1:8765/` (cổng đầu tiên còn trống trong 8765–8774). Chạy từ source thì dữ liệu nằm cạnh `app.py`; bản đóng gói thì ở `TheoDoiKenhTiktok_data` cạnh exe (hoặc `%LOCALAPPDATA%\TheoDoiKenhTiktok` nếu không ghi được). Đặt `TDK_DATA_DIR` để trỏ sang thư mục khác. `NO_OPEN=1` không mở trình duyệt, `NO_TRAY=1` không hiện biểu tượng khay.
+The page opens at `http://127.0.0.1:8765/` (the first free port in 8765–8774). When run from source, data is stored next to `app.py`; in the packaged build it is stored in `TheoDoiKenhTiktok_data` next to the exe (or in `%LOCALAPPDATA%\TheoDoiKenhTiktok` if that folder is not writable). Set `TDK_DATA_DIR` to point to a different folder. `NO_OPEN=1` skips opening the browser and `NO_TRAY=1` hides the tray icon.
 
-Tool chỉ đọc trang TikTok công khai bằng trình duyệt của máy bạn. Không gửi dữ liệu đi đâu khác. Kênh riêng tư và captcha sẽ chặn việc đọc; tool báo lỗi chứ không cố vượt qua.
+The tool only reads public TikTok pages, using a browser on your machine. It does not send data anywhere else. Private channels and captchas block reading; the tool reports an error instead of trying to bypass them.
 
-## CI và phát hành
+## CI and releases
 
-- `.github/workflows/ci.yml`: mỗi lần push/PR chạy ruff, kiểm tra cú pháp JS và toàn bộ test (kể cả giao diện với Chrome) trên Windows.
-- `.github/workflows/release.yml`: đẩy tag `v*` (ví dụ `git tag v0.1.0 && git push origin v0.1.0`) thì build exe, chạy thử exe (ping, trang chủ, tắt), nén zip kèm SHA256 và tạo GitHub Release. Chạy tay ở tab Actions thì chỉ tạo artifact.
+- `.github/workflows/ci.yml`: on every push and pull request, runs ruff, a JS syntax check and the full test suite (including the UI tests with Chrome) on Windows.
+- `.github/workflows/release.yml`: pushing a `v*` tag (for example `git tag v0.1.0 && git push origin v0.1.0`) builds the exe, smoke-tests it (ping, home page, shutdown), zips it with a SHA256 file and creates a GitHub Release. A manual run from the Actions tab only creates an artifact.
 
-Máy khác chỉ cần tải zip ở mục Releases, giải nén và chạy `ttwatch.exe`; dữ liệu nằm trong `TheoDoiKenhTiktok_data` cạnh exe.
+On another machine, just download the zip from Releases, unzip it and run `ttwatch.exe`; data is stored in `TheoDoiKenhTiktok_data` next to the exe.
 
-Exe chưa được ký số nên Windows SmartScreen có thể cảnh báo lần đầu (chọn *Thông tin thêm → Vẫn chạy*). Đối chiếu file tải về với file `.sha256` đi kèm nếu muốn chắc chắn.
+The exe is not code-signed, so Windows SmartScreen may show a warning the first time (choose *More info → Run anyway*). Compare the downloaded file with the accompanying `.sha256` file if you want to be sure.
 
-Từ bản 0.1.2, mỗi zip phát hành có kèm chứng thực nguồn gốc (GitHub Artifact Attestation, ký bằng Sigstore): xác nhận file do workflow `release.yml` của repo này build ra từ đúng commit của tag. Kiểm tra bằng [GitHub CLI](https://cli.github.com/):
+Since 0.1.2, every release zip comes with a provenance attestation (GitHub Artifact Attestation, signed with Sigstore). It confirms that the file was built by this repository's `release.yml` workflow from the exact commit of the tag. Verify it with the [GitHub CLI](https://cli.github.com/):
 
 ```bash
 gh attestation verify ttwatch-v0.1.2-win64.zip -R huuhungn/ttwatch
 ```
 
-## Kiểm thử
+## Testing
 
 ```bash
 uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
@@ -42,28 +42,28 @@ TDK_DATA_DIR=$(mktemp -d) .venv/Scripts/python -m pytest -q
 .venv/Scripts/ruff check --select F,E9 .
 ```
 
-Cần đặt `TDK_DATA_DIR` sang thư mục trống: app từ chối chạy khi hai bản dùng chung một thư mục dữ liệu. Test giao diện (`tests/test_ui.py`) mở trình duyệt thật (Chrome/Edge/Chromium của Playwright) với dữ liệu giả, không gọi TikTok, và tự bỏ qua nếu máy không có trình duyệt. Ảnh chụp lưu ở `docs/screens/`.
+`TDK_DATA_DIR` must point to an empty folder: the app refuses to start when two instances share one data folder. The UI tests (`tests/test_ui.py`) open a real browser (Chrome, Edge or Playwright's Chromium) with fake data, never call TikTok, and skip themselves if the machine has no browser. Screenshots are saved to `docs/screens/`.
 
-## Đóng gói exe
+## Building the exe
 
 ```powershell
-powershell -File build.ps1      # tạo dist\ttwatch\ttwatch.exe (~150 MB cả thư mục)
+powershell -File build.ps1      # produces dist\ttwatch\ttwatch.exe (~150 MB for the whole folder)
 ```
 
-Cần `uv` trong PATH; script tự cài PyInstaller vào `.venv`. `build/`, `dist/`, `*.spec` đã được ignore. Exe dùng Edge/Chrome có sẵn của máy. Ký số bản phát hành: xem `docs/code-signing.md`.
+Requires `uv` on PATH; the script installs PyInstaller into `.venv` by itself. `build/`, `dist/` and `*.spec` are already ignored. The exe uses the Edge/Chrome already installed on the machine. For code-signing a release, see `docs/code-signing.md`.
 
-## Cấu trúc
+## Layout
 
-| File | Vai trò |
+| File | Role |
 |---|---|
-| `app.py` | FastAPI: API, trang tĩnh, xuất file, khởi động |
-| `scraper.py` | Playwright, hàng đợi quét, thử lại, tự làm mới |
-| `db.py` | SQLite, migration có version, sao lưu |
-| `insights.py` | lịch sử, tổng quan, phân tích, so sánh, cảnh báo, chế độ xem |
-| `instance_lock.py` | khóa một bản chạy trên thư mục dữ liệu |
-| `tray.py`, `paths.py` | khay hệ thống, đường dẫn dữ liệu |
-| `static/` | giao diện (không cần npm): `main.js` bảng kênh, `panels.js` các màn mới, `charts.js` biểu đồ SVG |
+| `app.py` | FastAPI: API, static pages, file export, startup |
+| `scraper.py` | Playwright, scan queue, retries, auto-refresh |
+| `db.py` | SQLite, versioned migrations, backups |
+| `insights.py` | history, overview, analysis, comparison, alerts, saved views |
+| `instance_lock.py` | single-instance lock on the data folder |
+| `tray.py`, `paths.py` | system tray, data paths |
+| `static/` | the UI (no npm needed): `main.js` channel table, `panels.js` the newer screens, `charts.js` SVG charts |
 
-## Giấy phép
+## License
 
-MIT, xem `LICENSE`. Các thư viện bên thứ ba (FastAPI, Playwright, pystray, Pillow, openpyxl…) giữ giấy phép riêng của chúng. Tool chỉ đọc dữ liệu công khai; bạn tự chịu trách nhiệm tuân thủ điều khoản của TikTok khi dùng.
+MIT, see `LICENSE`. Third-party libraries (FastAPI, Playwright, pystray, Pillow, openpyxl, ...) keep their own licenses. The tool only reads public data; you are responsible for complying with TikTok's terms when you use it.

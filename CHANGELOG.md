@@ -1,41 +1,41 @@
-# Lịch sử thay đổi
+# Changelog
 
 ## 0.1.2 — 2026-10-16
 
-### Thêm
-- Mỗi zip phát hành có chứng thực nguồn gốc (GitHub Artifact Attestation, Sigstore): kiểm tra bằng `gh attestation verify <zip> -R huuhungn/ttwatch`.
-- Bước ký Authenticode bằng SignPath trong `release.yml`, tự bật khi repo có cấu hình SignPath (xem `docs/code-signing.md`); chưa cấu hình thì bỏ qua.
+### Added
+- Every release zip has a provenance attestation (GitHub Artifact Attestation, Sigstore): verify it with `gh attestation verify <zip> -R huuhungn/ttwatch`.
+- An Authenticode signing step using SignPath in `release.yml`, enabled automatically when the repo has SignPath configured (see `docs/code-signing.md`); skipped when it is not configured.
 
 ## 0.1.1 — 2026-10-16
 
-### Thêm
-- Giấy phép MIT (`LICENSE`, cũng nằm trong file zip phát hành).
-- Khi TikTok đòi captcha, tool tự đưa cửa sổ trình duyệt lên màn hình, báo ở khay và chờ tối đa 3 phút để bạn giải; giải xong tool tự quét tiếp rồi cất cửa sổ đi. Bỏ cuộc thì nghỉ 10 phút trước khi hiện lại.
+### Added
+- MIT license (`LICENSE`, also included in the release zip).
+- When TikTok asks for a captcha, the tool brings the browser window to the front, shows a notice in the tray and waits up to 3 minutes for you to solve it; once solved, the tool resumes scanning and hides the window again. If you give up, it waits 10 minutes before showing the window again.
 
 ## 0.1.0 — 2026-10-16
 
-### Thêm
-- Tab **Tổng quan**, **Cảnh báo**; ngăn chi tiết kênh với biểu đồ lịch sử và phân tích; so sánh 2–6 kênh.
-- Cột xu hướng 30 ngày; chế độ xem đã lưu; bảng lệnh Ctrl+K; trợ giúp phím tắt.
-- Nhập kênh từ txt/csv (kèm nhóm, ghi chú); xuất CSV lịch sử; tải bản sao lưu.
-- Cảnh báo follow đổi vượt ngưỡng và video mới, kèm bóng thông báo ở khay.
-- Tự cập nhật có kiểu (nhanh / quét 10 video) và giờ yên lặng.
-- Trang video: thẻ tóm tắt, phân tích, đánh dấu video vượt trội, xuất CSV.
-- Hoàn tác khi xóa kênh; banner khi có kênh bị dừng giữa chừng; gợi ý cách xử lý cho lỗi hay gặp.
-- Giao diện sáng/tối chọn tay, bảng gọn, focus rõ, tôn trọng giảm chuyển động.
-- GitHub Actions: `ci.yml` (ruff, cú pháp JS, toàn bộ test kể cả giao diện, trên Windows) và `release.yml` (build exe, chạy thử exe, nén zip + SHA256, tạo Release khi đẩy tag `v*`).
-- Chip nhóm (chuột phải để đổi tên/bỏ nhóm), cột #/username dính trái, mũi tên chọn dòng, tab điều hướng bằng phím, so sánh theo % thay đổi.
-- Màu chữ đạt WCAG AA ở cả hai giao diện (đo bằng test chạy trong trình duyệt).
-- Tài liệu: `docs/user-guide.md`. Logo, tên và liên kết của dự án thay bằng của repo này; tên exe đổi thành `ttwatch.exe`.
+### Added
+- **Overview** and **Alerts** tabs; a channel detail panel with history charts and analysis; comparison of 2–6 channels.
+- A 30-day trend column; saved views; a Ctrl+K command palette; keyboard shortcut help.
+- Import channels from txt/csv (with group and note); export history as CSV; download a backup.
+- Alerts when followers change beyond a threshold and when a new video appears, with a tray notification balloon.
+- Typed auto-update (quick / 10-video scan) and quiet hours.
+- Videos page: summary cards, analysis, highlighting of outperforming videos, CSV export.
+- Undo when deleting a channel; a banner when channels were interrupted mid-scan; suggested fixes for common errors.
+- Manual light/dark theme, compact table, clear focus, respects reduced motion.
+- Group chips (right-click to rename or ungroup), sticky #/username columns, row selection arrows, keyboard-navigable tabs, comparison by percentage change.
+- Text colors meet WCAG AA in both themes (measured by tests running in a browser).
+- Documentation: `docs/user-guide.md`. The project's logo, name and links were replaced with this repo's; the exe was renamed to `ttwatch.exe`.
+- GitHub Actions: `ci.yml` (ruff, JS syntax, the full test suite including the UI, on Windows) and `release.yml` (build the exe, smoke-test it, zip with SHA256, create a Release when a `v*` tag is pushed).
 
-### Đổi
-- Schema SQLite có version (`PRAGMA user_version`) và migration theo thứ tự.
-- Tự sao lưu DB mỗi ngày và trước khi migrate (giữ 7 bản).
-- Kết nối SQLite đóng ngay sau khi dùng (trước đây giữ khóa file đến khi GC).
-- Dữ liệu cũ mở bình thường; API cũ giữ nguyên hình dạng, chỉ thêm khóa mới.
+### Changed
+- The SQLite schema is versioned (`PRAGMA user_version`) with ordered migrations.
+- The database is backed up automatically every day and before migrating (7 copies kept).
+- SQLite connections are closed right after use (previously they held the file lock until garbage collection).
+- Existing data opens as before; the old API keeps its shape and only gains new keys.
 
-### Sửa
-- Kênh bị coi là lỗi khi TikTok chuyển trang giữa lúc đọc dữ liệu; lỗi mạng tạm thời được thử lại; số liệu ER/tăng trưởng tính cộng dồn đúng.
+### Fixed
+- A channel was treated as failed when TikTok navigated away while data was being read; transient network errors are now retried; ER and growth figures accumulate correctly.
 
-### Kiểm thử
-- Từ 24 lên 103 test, gồm test giao diện bằng trình duyệt thật với dữ liệu giả và test hiệu năng trên 300 kênh × 200 video × 60 mốc.
+### Testing
+- From 24 to 103 tests, including UI tests that drive a real browser with fake data and a performance test on 300 channels × 200 videos × 60 snapshots.
