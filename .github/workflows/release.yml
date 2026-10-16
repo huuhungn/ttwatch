@@ -1,7 +1,7 @@
 name: Release
 
-# Đẩy tag dạng v1.2.3 để build exe và tạo GitHub Release có file zip tải về.
-# Chạy tay (workflow_dispatch) thì chỉ build và đính kèm file zip vào lần chạy (artifact), không tạo Release.
+# Push a tag like v1.2.3 to build the exe and create a GitHub Release with a downloadable zip.
+# A manual run (workflow_dispatch) only builds and attaches the zip to the run (artifact); it creates no Release.
 on:
   push:
     tags: ["v*"]
@@ -9,8 +9,8 @@ on:
 
 permissions:
   contents: write
-  actions: read  # SignPath đọc thông tin job và tải artifact
-  id-token: write      # chứng thực nguồn gốc bản build (Sigstore)
+  actions: read  # SignPath reads job info and downloads the artifact
+  id-token: write      # build provenance attestation (Sigstore)
   attestations: write
 
 jobs:
@@ -26,25 +26,25 @@ jobs:
           cache: pip
           cache-dependency-path: requirements*.txt
 
-      - name: Cài phụ thuộc
+      - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt pyinstaller
 
-      - name: Test trước khi đóng gói
+      - name: Test before packaging
         env:
           TDK_DATA_DIR: ${{ runner.temp }}\tdk-data
         run: python -m pytest -q
 
-      - name: Đóng gói
+      - name: Package
         run: >
           python -m PyInstaller --noconfirm --clean --windowed --name ttwatch
           --add-data "static;static"
           --collect-submodules uvicorn --collect-submodules pystray
           app.py
 
-      # Ký số bằng SignPath Foundation (miễn phí cho mã nguồn mở). Chỉ chạy khi build từ tag và repo đã
-      # khai báo biến SIGNPATH_ORGANIZATION_ID + secret SIGNPATH_API_TOKEN; chưa có thì exe giữ nguyên chưa ký.
-      # Cách thiết lập: docs/code-signing.md. Ký trước khi chạy thử để thử đúng file sẽ phát hành.
-      - name: Tải exe chưa ký lên để ký
+      # Code signing via SignPath Foundation (free for open source). Runs only for tag builds when the repo
+      # defines the SIGNPATH_ORGANIZATION_ID variable and the SIGNPATH_API_TOKEN secret; otherwise the exe stays unsigned.
+      # Setup: docs/code-signing.md. Signing happens before the smoke test so that the exact file to be released is tested.
+      - name: Upload the unsigned exe for signing
         id: upload-unsigned
         if: github.ref_type == 'tag' && vars.SIGNPATH_ORGANIZATION_ID != ''
         uses: actions/upload-artifact@v7
@@ -52,7 +52,7 @@ jobs:
           name: ttwatch-unsigned-exe
           path: dist\ttwatch\ttwatch.exe
 
-      - name: Ký số bằng SignPath
+      - name: Sign with SignPath
         id: sign
         if: github.ref_type == 'tag' && vars.SIGNPATH_ORGANIZATION_ID != ''
         uses: signpath/github-action-submit-signing-request@v3
@@ -63,20 +63,20 @@ jobs:
           signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
-          # Người phê duyệt có tối đa 1 giờ để bấm duyệt yêu cầu ký.
+          # The approver has up to 1 hour to approve the signing request.
           wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed
 
-      - name: Thay exe bằng bản đã ký và kiểm tra chữ ký
+      - name: Replace the exe with the signed one and verify the signature
         if: steps.sign.outcome == 'success'
         shell: pwsh
         run: |
           Copy-Item signed\ttwatch.exe dist\ttwatch\ttwatch.exe -Force
           $sig = Get-AuthenticodeSignature dist\ttwatch\ttwatch.exe
-          Write-Host "Chữ ký: $($sig.Status) – $($sig.SignerCertificate.Subject)"
-          if ($sig.Status -ne "Valid") { throw "Chữ ký không hợp lệ: $($sig.Status)" }
+          Write-Host "Signature: $($sig.Status) - $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne "Valid") { throw "Invalid signature: $($sig.Status)" }
 
-      - name: Chạy thử exe vừa build (khởi động, ping, tắt)
+      - name: Smoke-test the built exe (start, ping, shut down)
         shell: pwsh
         env:
           TDK_DATA_DIR: ${{ runner.temp }}\exe-smoke
@@ -93,15 +93,15 @@ jobs:
               if ($r.app -eq "theo-doi-kenh-tiktok") { $ok = $true }
             } catch {}
           }
-          if (-not $ok) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw "Exe không phản hồi /api/ping" }
+          if (-not $ok) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw "The exe did not respond to /api/ping" }
           $page = Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing
-          if ($page.StatusCode -ne 200 -or $page.Content -notmatch "ttwatch") { throw "Trang chủ không đúng" }
+          if ($page.StatusCode -ne 200 -or $page.Content -notmatch "ttwatch") { throw "Unexpected home page" }
           Invoke-RestMethod -Method Post http://127.0.0.1:8765/api/shutdown | Out-Null
           $p.WaitForExit(10000) | Out-Null
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          Write-Host "Exe chạy được: ping, trang chủ, tắt."
+          Write-Host "The exe works: ping, home page, shutdown."
 
-      - name: Đặt tên và nén
+      - name: Name and zip
         id: pack
         shell: pwsh
         run: |
@@ -114,9 +114,9 @@ jobs:
           "zip=$zip" >> $env:GITHUB_OUTPUT
           Write-Host "$zip  sha256=$hash"
 
-      # Chữ ký mật mã miễn phí gắn file zip với repo, commit và workflow đã build ra nó. Không thay chữ ký
-      # Authenticode (SmartScreen không xét), nhưng ai cũng kiểm tra được: gh attestation verify <zip> -R huuhungn/ttwatch
-      - name: Chứng thực nguồn gốc bản build
+      # A free cryptographic signature that ties the zip to the repo, commit and workflow that built it. It does not
+      # replace an Authenticode signature (SmartScreen ignores it), but anyone can verify it: gh attestation verify <zip> -R huuhungn/ttwatch
+      - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.pack.outputs.zip }}
@@ -129,7 +129,7 @@ jobs:
             ${{ steps.pack.outputs.zip }}.sha256
           retention-days: 30
 
-      - name: Tạo GitHub Release
+      - name: Create the GitHub Release
         if: github.ref_type == 'tag'
         shell: pwsh
         env:

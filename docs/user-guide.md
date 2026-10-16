@@ -1,82 +1,84 @@
-# Hướng dẫn sử dụng
+# User guide
 
-## Bắt đầu nhanh
+The app's interface is in Vietnamese. This guide quotes each label exactly as it appears, in backticks, with the English meaning in parentheses the first time it is used.
 
-1. Dán link kênh, link video hoặc `@username` vào ô trên cùng (mỗi dòng một kênh, hoặc cách nhau bằng dấu phẩy/khoảng trắng). Chọn kiểu quét rồi bấm **Thêm kênh** (hoặc Ctrl+Enter).
-2. Tool lấy thông tin kênh và video bằng trình duyệt của máy bạn; tiến độ hiện ở góc trên bên phải.
-3. Mỗi lần cập nhật, tool lưu một mốc lịch sử. Có từ hai mốc trở lên thì mới có mức tăng và biểu đồ.
+## Quick start
 
-## Các màn hình
+1. Paste channel links, video links or `@username` into the box at the top (one channel per line, or separated by commas or spaces). Choose a scan type and click `Thêm kênh` (Add channel), or press Ctrl+Enter.
+2. The tool fetches channel and video information with a browser on your machine; progress is shown in the top-right corner.
+3. Each update stores one history snapshot. You need at least two snapshots before growth figures and charts appear.
 
-### Kênh
-Bảng chính. Chuột phải để mở menu: cập nhật nhanh, quét video theo số lượng/ngày, gắn nhóm, ghi chú, sao chép số liệu, xuất Excel, xóa.
+## Screens
 
-- **Cập nhật nhanh** (F5): thông tin kênh và video mới nhất, không cuộn.
-- **Quét video**: cuộn kênh để lấy nhiều video: toàn bộ, N video gần nhất, N ngày gần nhất hoặc một khoảng ngày.
-- Cột **Xu hướng 30 ngày** vẽ biến động follow; bấm tiêu đề để sắp xếp theo mức tăng.
-- **Chế độ xem** lưu lại ô tìm kiếm, nhóm, cột đang hiện và cách sắp xếp để gọi lại sau.
-- **Xóa** kênh có 8 giây để **Hoàn tác** ngay ở thông báo; sau đó mới xóa thật cùng toàn bộ video và lịch sử.
+### Channels
+The main table. Right-click for a menu: quick update, scan videos by count or by days, assign a group, add a note, copy figures, export to Excel, delete.
 
-### Tổng quan
-Thẻ tổng số, biểu đồ tổng follow/view, bảng **Tăng nhanh nhất** theo 24 giờ / 7 / 30 ngày, kênh lâu chưa cập nhật (quá 3 ngày), kênh lỗi, video nổi bật 30 ngày.
-Kênh mới theo dõi được đánh dấu "mới theo dõi": mức tăng của nó tính từ lần ghi nhận đầu tiên, không phải đủ cả kỳ.
+- `Cập nhật nhanh` (Quick update, F5): channel info and the latest videos, without scrolling.
+- `Quét video` (Scan videos): scrolls the channel to collect more videos: all of them, the latest N videos, the last N days, or a date range.
+- The `Xu hướng 30 ngày` (30-day trend) column draws the follower movement; click its header to sort by growth.
+- `Chế độ xem` (Views) saves the search box, group, visible columns and sort order so you can recall them later.
+- Deleting a channel (`Xóa`) shows an `Hoàn tác` (Undo) button in the notification for 8 seconds; after that the channel is deleted for good, together with all its videos and history.
 
-### Chi tiết kênh
-Chọn một kênh rồi nhấn **Space** (hoặc chuột phải → *Biểu đồ và phân tích*).
+### Overview (`Tổng quan`)
+Total cards, charts of total followers and views, a `Tăng nhanh nhất` (Fastest growing) table over 24 hours / 7 / 30 days, channels not updated for a long time (over 3 days), failed channels, and standout videos of the last 30 days.
+A newly tracked channel is marked `mới theo dõi` (newly tracked): its growth is measured from its first snapshot, not over the full period.
 
-- Biểu đồ lịch sử follow, tim, view, số video theo 7/30/90 ngày hoặc tất cả.
-- **View trung vị** là mức mà nửa số video vượt qua; ít bị kéo lệch bởi một video viral hơn trung bình.
-- **Vượt trội**: video có view từ 2 lần trung vị trở lên (cần ít nhất 5 video).
-- **Giờ đăng hiệu quả**: bản đồ nhiệt thứ × giờ, màu theo view trung bình. Khung được nêu là khung có view trung bình cao nhất trong số các khung có ít nhất 2 video.
+### Channel detail
+Select a channel and press **Space** (or right-click → `Biểu đồ và phân tích`, Charts and analysis).
 
-### So sánh
-Chọn 2–6 kênh (Ctrl+click), chuột phải → *So sánh các kênh đã chọn*.
+- History charts of followers, likes, views and video count over 7/30/90 days or all time.
+- **Median views** (`View trung vị`) is the level that half of the videos exceed; it is less skewed by one viral video than the average is.
+- **Outperformers** (`Vượt trội`): videos with at least 2 times the median views (needs at least 5 videos).
+- **Best posting times** (`Giờ đăng hiệu quả`): a weekday × hour heatmap colored by average views. The slot named is the one with the highest average views among slots with at least 2 videos.
 
-### Cảnh báo
-Sinh sau mỗi lần cập nhật thành công, từ lần thứ hai trở đi:
-- follow đổi từ ngưỡng % trở lên (mặc định 5%, chỉnh trong **Cài đặt**; 0 = tắt);
-- kênh có video mới giữa hai lần cập nhật.
+### Compare
+Select 2–6 channels (Ctrl+click), then right-click → `So sánh các kênh đã chọn` (Compare the selected channels).
 
-Chấm đỏ ở tab cho biết số cảnh báo chưa đọc. Khay hệ thống cũng hiện bóng thông báo.
+### Alerts (`Cảnh báo`)
+Generated after every successful update, from the second one onwards:
+- followers changed by at least the percentage threshold (default 5%, adjustable in `Cài đặt` (Settings); 0 = off);
+- the channel has a new video between two updates.
 
-### Danh sách video
-Bấm đúp một kênh (hoặc Enter). Có thẻ tóm tắt, phần **Phân tích** (đóng sẵn) tính theo đúng các video đang lọc, dấu ★ cho video vượt trội, xuất Excel hoặc CSV.
+A red dot on the tab shows the number of unread alerts. The system tray also shows a notification balloon.
 
-## Nhập, xuất, sao lưu
+### Video list
+Double-click a channel (or press Enter). It has summary cards, a `Phân tích` (Analysis) section (collapsed by default) computed over exactly the videos currently filtered, a ★ marker for outperforming videos, and Excel or CSV export.
 
-- **Nhập**: file `.txt` (mỗi dòng một kênh/link) hoặc `.csv` có dòng tiêu đề `username,group,note`. Kênh đã có không bị ghi đè nhóm khi cột nhóm để trống.
-- **Xuất**: Excel danh sách kênh (25 cột), Excel/CSV video, CSV lịch sử một kênh (trong Chi tiết kênh).
-- **Sao lưu**: Cài đặt → *Tải bản sao lưu* tải một bản `.db` nhất quán. Tool cũng tự sao lưu mỗi ngày và trước khi nâng cấp cấu trúc dữ liệu vào thư mục `backups/` cạnh dữ liệu (giữ 7 bản).
-- **Khôi phục**: tắt tool, chép một file trong `backups/` thành `data.db` (đổi tên `data.db`, `data.db-wal`, `data.db-shm` cũ trước), mở lại.
+## Import, export, backup
 
-## Phím tắt
+- **Import**: a `.txt` file (one channel or link per line) or a `.csv` file with the header row `username,group,note`. Existing channels keep their group when the group column is empty.
+- **Export**: an Excel file of the channel list (25 columns), Excel/CSV of videos, and a CSV of one channel's history (in the channel detail).
+- **Backup**: Settings → `Tải bản sao lưu` (Download backup) downloads a consistent `.db` copy. The tool also backs up automatically every day and before upgrading the data schema, into the `backups/` folder next to the data (7 copies kept).
+- **Restore**: close the tool, copy a file from `backups/` to `data.db` (first rename the old `data.db`, `data.db-wal` and `data.db-shm`), then start it again.
 
-| Phím | Việc |
+## Keyboard shortcuts
+
+| Key | Action |
 |---|---|
-| Ctrl+K | Bảng lệnh: tìm kênh, chuyển màn hình, chạy hành động |
-| ? | Bảng phím tắt |
-| Enter | Mở danh sách video |
-| Space | Chi tiết kênh |
-| F5 | Cập nhật nhanh |
-| Del | Xóa (có hoàn tác) |
-| Ctrl+A / Ctrl+C | Chọn tất cả / sao chép username |
-| 1 2 3 | Kênh / Tổng quan / Cảnh báo |
-| Esc | Đóng chi tiết, bỏ chọn |
+| Ctrl+K | Command palette: find channels, switch screens, run actions |
+| ? | Shortcut help |
+| Enter | Open the video list |
+| Space | Channel detail |
+| F5 | Quick update |
+| Del | Delete (with undo) |
+| Ctrl+A / Ctrl+C | Select all / copy usernames |
+| 1 2 3 | Channels / Overview / Alerts |
+| Esc | Close the detail panel, clear the selection |
 
-## Cài đặt
+## Settings
 
-- **Hiện cửa sổ trình duyệt**: luôn hiện cửa sổ trình duyệt của tool. Không bắt buộc để giải captcha: khi TikTok đòi xác minh, tool tự đưa cửa sổ lên, báo ở khay và chờ tối đa 3 phút; giải xong tool tự quét tiếp và ghi nhớ phiên đã xác minh.
-- **Tự động cập nhật**: chu kỳ phút, kiểu (nhanh hoặc quét 10 video), giờ yên lặng (có thể qua nửa đêm).
-- **Cảnh báo**: bật/tắt, ngưỡng follow, video mới.
-- **Giao diện**: sáng/tối/theo hệ thống, bảng gọn.
+- `Hiện cửa sổ trình duyệt` (Show the browser window): always show the tool's browser window. It is not required for solving captchas: when TikTok asks for verification, the tool brings the window to the front, shows a notice in the tray and waits up to 3 minutes; once you solve it, the tool resumes scanning and remembers the verified session.
+- **Auto-update**: interval in minutes, type (quick or a 10-video scan) and quiet hours (may span midnight).
+- **Alerts**: on/off, follower threshold, new videos.
+- **Appearance**: light/dark/follow the system, compact table.
 
-## Khi gặp lỗi
+## Troubleshooting
 
-| Thông báo | Cách xử lý |
+| Message | What to do |
 |---|---|
-| Cần xác minh (captcha) | Cửa sổ trình duyệt tự hiện: giải captcha trong 3 phút, tool tự quét tiếp. Nếu quá hạn, tool báo lỗi và 10 phút sau mới hiện lại; hãy quét lại khi bạn có mặt. |
-| Kênh không tồn tại hoặc bị khóa | Kiểm tra lại username. |
-| Bị dừng giữa chừng | Tool bị tắt khi đang quét; bấm *Quét lại các kênh này* ở thanh vàng. |
-| Hồ sơ trình duyệt đang bị giữ | Tắt cửa sổ trình duyệt/tool khác đang dùng cùng thư mục dữ liệu. |
-| Lỗi mạng, timeout | Tool tự thử lại tối đa 3 lần; nếu vẫn lỗi hãy thử lại sau. |
-| "TikTok ngừng trả thêm" / lấy được 0 video | TikTok giới hạn khi quét dồn dập (đã gặp sau vài lượt quét liên tiếp trong vài phút, kể cả quét 3 video). Thông tin kênh vẫn lấy được. Dấu hiệu nhận biết: TikTok vẫn trả HTTP 200 cho danh sách video nhưng nội dung rỗng, không có captcha. Chờ rồi quét lại (đã thấy kéo dài hơn 30 phút trên một IP sau khoảng 8 lượt quét liên tiếp); không cần làm gì khác. Quét toàn bộ kênh rất nhiều video thường dừng sớm (đã thấy 476/1512), và tool không xóa video cũ trong trường hợp này. |
+| Verification required (captcha) | The browser window appears by itself: solve the captcha within 3 minutes and the tool resumes scanning. If time runs out, the tool reports an error and only shows the window again after 10 minutes; rescan when you are present. |
+| Channel does not exist or is locked | Check the username. |
+| Interrupted | The tool was closed during a scan; click `Quét lại các kênh này` (Rescan these channels) in the yellow bar. |
+| Browser profile is in use | Close the other browser window or tool that uses the same data folder. |
+| Network error, timeout | The tool retries up to 3 times automatically; if it still fails, try again later. |
+| `TikTok ngừng trả thêm` (TikTok stopped returning more) / 0 videos fetched | TikTok throttles rapid scanning (seen after several scans in a row within a few minutes, even 3-video scans). Channel info can still be fetched. How to recognize it: TikTok still returns HTTP 200 for the video list but the content is empty, with no captcha. Wait and rescan (it has lasted over 30 minutes on one IP after about 8 consecutive scans); nothing else is needed. Scanning a channel with a very large number of videos often stops early (476/1512 was seen), and the tool does not delete old videos in this case. |
