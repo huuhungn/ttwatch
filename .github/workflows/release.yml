@@ -10,6 +10,8 @@ on:
 permissions:
   contents: write
   actions: read  # SignPath đọc thông tin job và tải artifact
+  id-token: write      # chứng thực nguồn gốc bản build (Sigstore)
+  attestations: write
 
 jobs:
   build:
@@ -111,6 +113,13 @@ jobs:
           "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
           "zip=$zip" >> $env:GITHUB_OUTPUT
           Write-Host "$zip  sha256=$hash"
+
+      # Chữ ký mật mã miễn phí gắn file zip với repo, commit và workflow đã build ra nó. Không thay chữ ký
+      # Authenticode (SmartScreen không xét), nhưng ai cũng kiểm tra được: gh attestation verify <zip> -R huuhungn/ttwatch
+      - name: Chứng thực nguồn gốc bản build
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.pack.outputs.zip }}
 
       - uses: actions/upload-artifact@v7
         with:

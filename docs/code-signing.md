@@ -1,5 +1,7 @@
 # Ký số exe bằng SignPath Foundation (miễn phí)
 
+> **Không bắt buộc.** Việc ký Authenticode chỉ để bớt cảnh báo SmartScreen. Không ký vẫn dùng bình thường. Bản phát hành đã có SHA256 và chứng thực nguồn gốc Sigstore (xem README); hai thứ này không cần đăng ký tài khoản nào.
+
 Exe phát hành hiện chưa ký, nên Windows SmartScreen có thể cảnh báo. `release.yml` đã có sẵn bước ký, nhưng bước này **chỉ chạy khi** build từ tag **và** repo có biến `SIGNPATH_ORGANIZATION_ID`. Chưa cấu hình thì bản phát hành vẫn build bình thường, chưa ký.
 
 ## Điều kiện của SignPath Foundation

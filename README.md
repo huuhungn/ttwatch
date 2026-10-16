@@ -28,6 +28,12 @@ Máy khác chỉ cần tải zip ở mục Releases, giải nén và chạy `ttw
 
 Exe chưa được ký số nên Windows SmartScreen có thể cảnh báo lần đầu (chọn *Thông tin thêm → Vẫn chạy*). Đối chiếu file tải về với file `.sha256` đi kèm nếu muốn chắc chắn.
 
+Từ bản 0.1.2, mỗi zip phát hành có kèm chứng thực nguồn gốc (GitHub Artifact Attestation, ký bằng Sigstore): xác nhận file do workflow `release.yml` của repo này build ra từ đúng commit của tag. Kiểm tra bằng [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify ttwatch-v0.1.2-win64.zip -R huuhungn/ttwatch
+```
+
 ## Kiểm thử
 
 ```bash
