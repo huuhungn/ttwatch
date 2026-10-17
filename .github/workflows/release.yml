@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.2.3 to build the exe and create a GitHub Release with a downloadable zip.
+# Push a tag like v1.2.3 to build the exe and create a GitHub Release with a downloadable zip and a Setup.exe.
 # A manual run (workflow_dispatch) only builds and attaches the zip to the run (artifact); it creates no Release.
 on:
   push:
@@ -44,11 +44,8 @@ jobs:
         run: python -m pytest -q
 
       - name: Package
-        run: >
-          python -m PyInstaller --noconfirm --clean --windowed --name ttwatch
-          --add-data "static;static"
-          --collect-submodules uvicorn --collect-submodules pystray
-          app.py
+        shell: pwsh
+        run: ./build.ps1
 
       # Code signing via SignPath Foundation (free for open source). Runs only for tag builds when the repo
       # defines the SIGNPATH_ORGANIZATION_ID variable and the SIGNPATH_API_TOKEN secret; otherwise the exe stays unsigned.
@@ -123,12 +120,35 @@ jobs:
           "zip=$zip" >> $env:GITHUB_OUTPUT
           Write-Host "$zip  sha256=$hash"
 
+      # The Setup.exe is an extra download; the in-app updater keeps using the zip. The "older" installer is the same
+      # files under a lower version, only there to prove that installing over a running, older copy works.
+      - name: Build the installer
+        id: installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "Could not install Inno Setup" }
+          $ver = python -c "from version import __version__; print(__version__)"
+          ./packaging/build_installer.ps1 -Version 0.0.1
+          ./packaging/build_installer.ps1
+          "version=$ver" >> $env:GITHUB_OUTPUT
+          "setup=dist/installer/ttwatch-v$ver-Setup.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Smoke-test the installer (fresh install, upgrade over a running copy, uninstall)
+        shell: pwsh
+        run: >
+          ./scripts/ci/installer_smoke.ps1
+          -OldInstaller dist/installer/ttwatch-v0.0.1-Setup.exe -OldVersion 0.0.1
+          -NewInstaller ${{ steps.installer.outputs.setup }} -NewVersion ${{ steps.installer.outputs.version }}
+
       # A free cryptographic signature that ties the zip to the repo, commit and workflow that built it. It does not
       # replace an Authenticode signature (SmartScreen ignores it), but anyone can verify it: gh attestation verify <zip> -R huuhungn/ttwatch
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: ${{ steps.pack.outputs.zip }}
+          subject-path: |
+            ${{ steps.pack.outputs.zip }}
+            ${{ steps.installer.outputs.setup }}
 
       - uses: actions/upload-artifact@v7
         with:
@@ -136,6 +156,8 @@ jobs:
           path: |
             ${{ steps.pack.outputs.zip }}
             ${{ steps.pack.outputs.zip }}.sha256
+            ${{ steps.installer.outputs.setup }}
+            ${{ steps.installer.outputs.setup }}.sha256
           retention-days: 30
 
       - name: Create the GitHub Release
@@ -145,5 +167,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $zip = "${{ steps.pack.outputs.zip }}"
-          gh release create $env:GITHUB_REF_NAME $zip "$zip.sha256" `
+          $setup = "${{ steps.installer.outputs.setup }}"
+          gh release create $env:GITHUB_REF_NAME $zip "$zip.sha256" $setup "$setup.sha256" `
             --title "ttwatch $env:GITHUB_REF_NAME" --generate-notes

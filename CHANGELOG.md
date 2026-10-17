@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Setup.exe.** Releases now include `ttwatch-v<version>-Setup.exe` next to the zip: a per-user installer (no administrator rights) built with Inno Setup that installs into `%LOCALAPPDATA%\Programs\ttwatch`, adds a Start Menu entry, an optional Desktop icon and an *Installed apps* entry, and offers to start the tool at the end. Installing a newer Setup over an older copy closes the running tool, replaces the program files and keeps `TheoDoiKenhTiktok_data`; uninstalling stops the tool, removes the program files and the *Start with Windows* entry, and leaves your data folder alone. The in-app self-update still uses the zip, so an installed copy updates itself too.
+- The exe and installer have their own icon (`packaging/app.ico`).
+- A release gate (`packaging/assert_clean_package.ps1`) fails the build when the packaged folder contains a database, browser profile, log or tool state.
+- `installer-smoke.yml` and the release workflow install the Setup on a clean runner, install a newer one over a running older copy and uninstall it, checking that user data survives each step.
+
+### Changed
+- `release.yml` packages with `build.ps1`, so the local and CI builds use the same PyInstaller options; the Setup is covered by the build provenance attestation and has its own `.sha256`.
+
 ## 0.3.0 — 2026-10-17
 
 ### Added

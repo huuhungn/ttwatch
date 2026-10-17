@@ -2,7 +2,7 @@
 
 A tool that runs on your own machine: enter a list of TikTok channels and it reads each channel's followers, likes and videos, stores the history in SQLite, draws charts, compares channels and alerts you to large changes. Python (FastAPI + Playwright), a local web UI that needs no npm, and a system tray icon. The UI language is Vietnamese.
 
-Download the prebuilt Windows version from [Releases](https://github.com/huuhungn/ttwatch/releases) (unzip and run `ttwatch.exe`). User guide: `docs/user-guide.md`; change history: `CHANGELOG.md`.
+Download the prebuilt Windows version from [Releases](https://github.com/huuhungn/ttwatch/releases): run `ttwatch-v<version>-Setup.exe` for a normal per-user install, or unzip `ttwatch-v<version>-win64.zip` and run `ttwatch.exe`. User guide: `docs/user-guide.md`; change history: `CHANGELOG.md`.
 
 The data folder and environment variable names (`TheoDoiKenhTiktok_data`, `TDK_DATA_DIR`) are kept from earlier versions so that previously scanned data is not lost.
 
@@ -22,9 +22,12 @@ The tool only reads public TikTok pages, using a browser on your machine. It doe
 ## CI and releases
 
 - `.github/workflows/ci.yml`: on every push and pull request, runs ruff, a JS syntax check and the full test suite (including the UI tests with Chrome) on Windows.
-- `.github/workflows/release.yml`: pushing a `v*` tag (for example `git tag v0.1.0 && git push origin v0.1.0`) builds the exe, smoke-tests it (ping, home page, shutdown), zips it with a SHA256 file and creates a GitHub Release. A manual run from the Actions tab only creates an artifact.
+- `.github/workflows/release.yml`: pushing a `v*` tag (for example `git tag v0.1.0 && git push origin v0.1.0`) builds the exe, smoke-tests it (ping, home page, shutdown), zips it with a SHA256 file, builds the installer, smoke-tests that too and creates a GitHub Release with both. A manual run from the Actions tab only creates an artifact.
+- `.github/workflows/installer-smoke.yml`: when `packaging/`, `scripts/ci/`, `build.ps1` or `version.py` change, builds the installer and walks through a fresh install, an upgrade over a running older copy and an uninstall, so a broken installer is found before a tag.
 
-On another machine, just download the zip from Releases, unzip it and run `ttwatch.exe`; data is stored in `TheoDoiKenhTiktok_data` next to the exe.
+On another machine, download the Setup from Releases and run it (no administrator rights; it installs into `%LOCALAPPDATA%\Programs\ttwatch`, adds a Start Menu entry and an optional Desktop icon, and can be removed from *Installed apps*). Or download the zip, unzip it and run `ttwatch.exe`. Either way data is stored in `TheoDoiKenhTiktok_data` next to the exe. Installing a newer Setup over an older copy keeps the data and closes the running tool; uninstalling removes the program but leaves `TheoDoiKenhTiktok_data` for you to delete or keep.
+
+The in-app updater (below) keeps using the zip, so an installed copy updates itself like an unzipped one. Windows *Installed apps* keeps showing the version that Setup installed until you run a newer Setup.
 
 The exe is not code-signed, so Windows SmartScreen may show a warning the first time (choose *More info → Run anyway*). Compare the downloaded file with the accompanying `.sha256` file if you want to be sure.
 
@@ -60,6 +63,12 @@ TDK_DATA_DIR=$(mktemp -d) .venv/Scripts/python -m pytest -q
 powershell -File build.ps1      # produces dist\ttwatch\ttwatch.exe (~150 MB for the whole folder)
 ```
 
+```powershell
+powershell -File packaging\build_installer.ps1   # then dist\installer\ttwatch-v<version>-Setup.exe (needs Inno Setup 6: winget install JRSoftware.InnoSetup)
+```
+
+`build_installer.ps1` first runs `packaging/assert_clean_package.ps1`, which refuses a folder that contains a database, browser profile, log or tool state, so a local run can never end up inside a release.
+
 Requires `uv` on PATH; the script installs PyInstaller into `.venv` by itself. `build/`, `dist/` and `*.spec` are already ignored. The exe uses the Edge/Chrome already installed on the machine. For code-signing a release, see `docs/code-signing.md`.
 
 ## Layout
@@ -70,6 +79,7 @@ Requires `uv` on PATH; the script installs PyInstaller into `.venv` by itself. `
 | `scraper.py` | Playwright, scan queue, retries, auto-refresh |
 | `autostart.py` | start with Windows: the per-user Run entry and the silent `--background` start |
 | `pacing.py` | random gaps between channels, growing pause after captchas and blocked scans |
+| `packaging/` | `ttwatch.iss` (Inno Setup installer), `app.ico`, `build_installer.ps1`, `assert_clean_package.ps1` (release gate) |
 | `db.py` | SQLite, versioned migrations, backups |
 | `insights.py` | history, overview, analysis, comparison, alerts, saved views |
 | `instance_lock.py` | single-instance lock on the data folder |

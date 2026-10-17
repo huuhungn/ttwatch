@@ -1,0 +1,76 @@
+name: Installer smoke
+
+# Builds the exe and the Setup.exe and walks through fresh install, upgrade over a running copy and uninstall.
+# release.yml runs the same script for every tag; this workflow catches a broken installer before tagging.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/installer-smoke.yml"
+      - "packaging/**"
+      - "scripts/ci/**"
+      - "build.ps1"
+      - "version.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/installer-smoke.yml"
+      - "packaging/**"
+      - "scripts/ci/**"
+      - "build.ps1"
+      - "version.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Package the exe
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Build the installers
+        id: installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "Could not install Inno Setup" }
+          $ver = python -c "from version import __version__; print(__version__)"
+          ./packaging/build_installer.ps1 -Version 0.0.1
+          ./packaging/build_installer.ps1
+          "version=$ver" >> $env:GITHUB_OUTPUT
+          "setup=dist/installer/ttwatch-v$ver-Setup.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Smoke-test the installer
+        shell: pwsh
+        run: >
+          ./scripts/ci/installer_smoke.ps1
+          -OldInstaller dist/installer/ttwatch-v0.0.1-Setup.exe -OldVersion 0.0.1
+          -NewInstaller ${{ steps.installer.outputs.setup }} -NewVersion ${{ steps.installer.outputs.version }}
+
+      - name: Keep the installer for inspection
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ttwatch-installer
+          path: dist/installer/ttwatch-v${{ steps.installer.outputs.version }}-Setup.exe
+          if-no-files-found: ignore
+          retention-days: 7
