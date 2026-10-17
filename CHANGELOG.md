@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Scan monitor.** The bar under the header now says what the scan is doing and how far it has got: the current step (opening the channel, waiting for the video list, scrolling, waiting for you to solve a captcha, retrying), how long the channel has been running, how many channels of the batch are done, an estimate of the time left (from the second finished channel on) and how many failed.
+- **Stuck scans are flagged.** When the running channel shows no sign of life for 2 minutes, the spinner turns into a warning that the scan may be stuck and what to do.
+- **Finished runs are reported.** When the queue empties the bar keeps a summary (*Quét xong N kênh trong …*, with the number of failed channels) until you close it, and the tray shows a notice for runs of two or more channels or with failures (not during quiet hours).
+
+### Changed
+- `GET /api/channels` and the other worker statuses gain `batch` and `last`; `current` gains `step`, `elapsed`, `idle` and `stalled`.
+
 ## 0.4.0 — 2026-10-17
 
 ### Added

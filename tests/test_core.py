@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -370,7 +371,7 @@ class QueueTest(unittest.TestCase):
 
     def test_status_matches_what_the_page_reads(self):
         s = self.scraper
-        self.assertEqual(s.status(), {"queue": 0, "current": None, "pause": None})
+        self.assertEqual(s.status(), {"queue": 0, "current": None, "pause": None, "batch": None, "last": None})
         s.enqueue(["demo", "other"], {"mode": "quick"})
         self.assertEqual(s.status()["queue"], 2)
         s.current = {"username": "demo", "label": "Cập nhật nhanh", "videos": 0, "total": 0, "started": 1}
@@ -378,6 +379,137 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(status["queue"], 3)
         self.assertEqual(status["current"]["label"], "Cập nhật nhanh")
         self.assertIsNot(status["current"], s.current)
+
+    def test_status_tells_a_slow_scan_from_a_stuck_one(self):
+        s = self.scraper
+        now = time.time()
+        s.current = {"username": "demo", "label": "x", "videos": 0, "total": 0, "started": now - 300, "beat": now - 5}
+        current = s.status()["current"]
+        self.assertFalse(current["stalled"])
+        self.assertGreaterEqual(current["elapsed"], 300)
+        s.current["beat"] = now - 200
+        current = s.status()["current"]
+        self.assertTrue(current["stalled"])
+        self.assertGreaterEqual(current["idle"], 200)
+        s._beat("Đang cuộn")
+        current = s.status()["current"]
+        self.assertFalse(current["stalled"])
+        self.assertEqual(current["step"], "Đang cuộn")
+
+    def test_beat_without_a_running_job_does_nothing(self):
+        self.scraper._beat("x")
+        self.assertIsNone(self.scraper.current)
+
+    def test_status_estimates_the_time_left_from_the_jobs_done(self):
+        s = self.scraper
+        s.batch = {"total": 10, "done": 1, "errors": 0, "started": time.time() - 60}
+        self.assertIsNone(s.status()["batch"]["eta"])   # one job is too little to guess from
+        s.batch["done"] = 2
+        self.assertAlmostEqual(s.status()["batch"]["eta"], 240, delta=5)   # 30 s each, 8 to go
+        s.batch["done"] = 10
+        self.assertIsNone(s.status()["batch"]["eta"])
+
+    def test_batch_counts_failures_keeps_a_summary_and_pings_the_tray(self):
+        import scraper as scraper_module
+
+        s = self.scraper
+        self.db.add_channels(["bad"])
+        s._scrape = lambda key, job: self.db.set_status(key, "error" if key == "bad" else "done", "boom" if key == "bad" else "")
+        pings = []
+        s.enqueue(["demo", "other", "bad"], {"mode": "quick"})
+        self.assertEqual(s.status()["batch"], {"total": 3, "done": 0, "errors": 0, "eta": None})
+        with mock.patch.object(scraper_module, "_notify_tray_text", lambda text, title="": text and pings.append(text)):
+            self.assertTrue(_run_worker(s, lambda: s.last_batch))
+            # The notice goes out from the worker thread right after the summary is stored.
+            self.assertTrue(_wait_until(lambda: pings))
+        self.assertIsNone(s.status()["batch"])
+        last = s.status()["last"]
+        self.assertEqual((last["done"], last["errors"]), (3, 1))
+        self.assertGreaterEqual(last["ago"], 0)
+        self.assertEqual(len(pings), 1)
+        self.assertIn("Quét xong 3 kênh, 1 kênh lỗi", pings[0])
+        # The next run starts a fresh batch and clears the old summary. A scraper without a worker thread: a live one would
+        # pick the job up seconds later and write into the database of whichever test is running by then.
+        fresh = _make_scraper()
+        fresh.last_batch = s.last_batch
+        fresh.enqueue(["demo"], {"mode": "quick"})
+        self.assertIsNone(fresh.status()["last"])
+        self.assertEqual(fresh.status()["batch"]["total"], 1)
+
+    def test_a_failed_job_is_counted_even_when_its_channel_was_queued_again_meanwhile(self):
+        s = self.scraper
+        first = []
+
+        def scrape(key, job):
+            if first:
+                self.db.set_status(key, "done", "")
+                return
+            first.append(key)
+            s.enqueue([key], {"mode": "scan", "limit": 1})   # queued while this one runs: the channel goes back to "queued"
+            self.db.set_status(key, "error", "boom")
+
+        s._scrape = scrape
+        s.enqueue(["demo"], {"mode": "quick"})
+        self.assertTrue(_run_worker(s, lambda: s.last_batch))
+        assert s.last_batch is not None
+        self.assertEqual((s.last_batch["done"], s.last_batch["errors"]), (2, 1))
+
+    def test_opening_the_browser_reports_progress_for_every_launch_attempt(self):
+        import scraper as scraper_module
+
+        s = self.scraper
+        s.current = {"username": "demo", "label": "x", "videos": 0, "total": 0, "started": 1.0, "beat": 1.0}
+        beats, real_beat = [], s._beat
+
+        def spy(step=None):
+            beats.append(step)
+            real_beat(step)
+
+        class Chromium:
+            def launch_persistent_context(self, *args, channel=None, **kwargs):
+                if channel:
+                    raise RuntimeError(f"{channel} is not installed")
+                return "context"
+
+        class Playwright:
+            chromium = Chromium()
+
+        with mock.patch.object(scraper_module, "sync_playwright", lambda: mock.Mock(start=lambda: Playwright())), \
+                mock.patch.object(s, "_beat", spy):
+            self.assertEqual(s._browser(), "context")
+        # One report before starting, one before each of the three launch attempts (msedge, chrome, bundled chromium).
+        self.assertEqual(beats, ["Đang mở trình duyệt", None, None, None])
+        self.assertGreater(s.current["beat"], 1.0)
+
+    def test_a_lone_clean_job_leaves_a_summary_but_no_tray_ping(self):
+        import scraper as scraper_module
+
+        s = self.scraper
+        pings = []
+        # Called directly, without a worker thread: the absence of a notice is then not a race against that thread.
+        s.batch = {"total": 1, "done": 0, "errors": 0, "started": time.time()}
+        with mock.patch.object(scraper_module, "_notify_tray_text", lambda text, title="": text and pings.append(text)):
+            s._batch_job_done(False)
+        assert s.last_batch is not None
+        self.assertEqual(s.last_batch["done"], 1)
+        self.assertEqual(pings, [])
+
+    def test_a_lone_failed_job_does_ping_the_tray(self):
+        import scraper as scraper_module
+
+        s = self.scraper
+        pings = []
+        s.batch = {"total": 1, "done": 0, "errors": 0, "started": time.time()}
+        with mock.patch.object(scraper_module, "_notify_tray_text", lambda text, title="": text and pings.append(text)):
+            s._batch_job_done(True)
+        self.assertEqual(len(pings), 1)
+        self.assertIn("Quét xong 1 kênh, 1 kênh lỗi", pings[0])
+
+    def test_duration_text(self):
+        from scraper import duration_text
+
+        self.assertEqual([duration_text(s) for s in (5, 59, 60, 200, 599, 600, 1805)],
+                         ["5 giây", "59 giây", "1 phút", "3 phút 20 giây", "9 phút 59 giây", "10 phút", "30 phút"])
 
     def test_deleted_channel_is_skipped(self):
         s = self.scraper
@@ -953,7 +1085,8 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(scraper.jobs.qsize(), 2)
         listing = client.get("/api/channels").json()
         self.assertEqual([c["username"] for c in listing["channels"]], ["demo", "other"])
-        self.assertEqual(listing["worker"], {"queue": 2, "current": None, "pause": None})
+        self.assertEqual(listing["worker"], {"queue": 2, "current": None, "pause": None, "last": None,
+                                             "batch": {"total": 2, "done": 0, "errors": 0, "eta": None}})
         # Channels not in the list are skipped; a job is required.
         res = client.post("/api/channels/refresh", json={"usernames": ["Demo", "ghost"], "job": {"mode": "scan"}})
         self.assertEqual(res.json(), {"queued": 1})

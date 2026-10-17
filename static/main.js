@@ -157,10 +157,29 @@ function pauseText(p) {
   return (p.reason === "captcha" ? "TikTok hiện captcha" : "TikTok chưa trả dữ liệu") + `, tool nghỉ ${left} rồi quét tiếp`;
 }
 
+// Same wording as scraper.duration_text.
+function fmtDur(s) {
+  const m = Math.floor(s / 60);
+  return !m ? `${s} giây` : m < 10 && s % 60 ? `${m} phút ${s % 60} giây` : `${m} phút`;
+}
+
+let dismissedRun = 0; // `ended` of the finished-run summary the user closed
+
+function finishedRunHtml() {
+  const l = worker.last;
+  // A run with failures stays visible longer: those are the ones a person must look at.
+  if (!l || l.ended === dismissedRun || l.ago > (l.errors ? 3600 : 900)) return "";
+  return `${l.errors ? "⚠" : "✓"} Quét xong ${nf.format(l.done)} kênh trong ${fmtDur(l.seconds)}` +
+    (l.errors ? ` · <b style="color:var(--down)">${nf.format(l.errors)} kênh lỗi</b> (xem cột Trạng thái)` : "") +
+    ' <button class="btn" id="btnDismissRun" type="button">Ẩn</button>';
+}
+
 function renderWorker() {
   const c = worker.current;
   if (!c && !worker.queue) {
-    $("#worker").innerHTML = "";
+    $("#worker").innerHTML = finishedRunHtml();
+    const dismiss = $("#btnDismissRun");
+    if (dismiss) dismiss.onclick = () => { dismissedRun = worker.last.ended; renderWorker(); };
     return;
   }
   const rest = worker.queue - (c ? 1 : 0);
@@ -175,14 +194,25 @@ function renderWorker() {
     };
     return;
   }
+  const b = worker.batch;
+  const stalled = c?.stalled;
   $("#worker").innerHTML =
-    `<span class="spin"></span>` +
+    (stalled
+      ? '<span title="Kênh đang quét sẽ báo &quot;Bị dừng&quot; sau khi mở lại tool; quét lại kênh đó khi tool chạy lại.">⚠</span>'
+      : '<span class="spin"></span>') +
     (c
       ? `<span title="${esc(c.label)}">${c.total ? "Đang cập nhật view" : "Đang quét"} <b>@${esc(c.username)}</b>` +
         (c.total ? ` · ${nf.format(c.videos)}/${nf.format(c.total)} video` : c.videos ? ` · ${nf.format(c.videos)} video` : "") +
-        "</span>"
+        "</span>" +
+        (stalled
+          ? ` · <b style="color:var(--down)">Không thấy tiến triển trong ${fmtDur(c.idle)}, có thể đang bị treo. Nếu vẫn vậy, hãy tắt tool rồi mở lại.</b>`
+          : c.step ? ` · <span class="muted">${esc(c.step)}</span>` : "") +
+        ` · ${fmtDur(c.elapsed)}`
       : "Đang chuẩn bị…") +
-    (rest > 0 ? ` · còn ${rest} kênh chờ` : "");
+    (rest > 0 ? ` · còn ${rest} kênh chờ` : "") +
+    (b && b.total > 1 ? ` · đã xong ${b.done}/${b.total}` : "") +
+    (b?.eta ? ` · còn khoảng ${fmtDur(b.eta)}` : "") +
+    (b?.errors ? ` · <b style="color:var(--down)">${b.errors} lỗi</b>` : "");
 }
 
 function updateStatusbar(sel) {

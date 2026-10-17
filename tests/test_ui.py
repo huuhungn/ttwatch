@@ -469,6 +469,45 @@ class UiTest(unittest.TestCase):
         p.wait_for_function("!document.querySelector('#btnResume')")
         self.assertEqual(resumed, [True])
 
+    def test_worker_bar_shows_progress_a_stall_warning_and_the_finished_run(self):
+        p = self.page
+        running = {"username": "demo", "label": "Quét toàn bộ video", "videos": 120, "total": 0, "started": 1,
+                   "elapsed": 75, "idle": 3, "stalled": False, "step": "Đang cuộn trang để lấy thêm video"}
+        state = {"queue": 5, "current": running, "pause": None, "last": None,
+                 "batch": {"total": 5, "done": 1, "errors": 1, "eta": 240}}
+
+        def channels(route):
+            data = route.fetch().json()
+            data["worker"] = state
+            route.fulfill(json=data)
+
+        p.route("**/api/channels", channels)
+        self.open_home()
+        p.wait_for_function("document.querySelector('#worker').innerText.includes('@demo')")
+        text = p.locator("#worker").inner_text()
+        for part in ("120 video", "Đang cuộn trang để lấy thêm video", "1 phút 15 giây", "còn 4 kênh chờ",
+                     "đã xong 1/5", "còn khoảng 4 phút", "1 lỗi"):
+            self.assertIn(part, text)
+        self.assertEqual(p.locator("#worker .spin").count(), 1)
+
+        # No sign of life for too long: the spinner turns into a warning with advice.
+        state["current"] = {**running, "idle": 190, "stalled": True}
+        p.wait_for_function("document.querySelector('#worker').innerText.includes('có thể đang bị treo')")
+        self.assertIn("3 phút 10 giây", p.locator("#worker").inner_text())
+        self.assertEqual(p.locator("#worker .spin").count(), 0)
+
+        # The queue drained: a summary stays until it is dismissed.
+        state.update(queue=0, current=None, batch=None, last={"done": 3, "errors": 1, "seconds": 200, "ago": 5, "ended": 111})
+        p.wait_for_selector("#btnDismissRun")
+        text = p.locator("#worker").inner_text()
+        self.assertIn("Quét xong 3 kênh trong 3 phút 20 giây", text)
+        self.assertIn("1 kênh lỗi", text)
+        p.click("#btnDismissRun")
+        p.wait_for_function("document.querySelector('#worker').innerText.trim() === ''")
+        # Still hidden after the next poll.
+        p.wait_for_timeout(2500)
+        self.assertEqual(p.locator("#btnDismissRun").count(), 0)
+
     def test_scan_pace_setting_is_saved(self):
         p = self.page
         self.open_home()

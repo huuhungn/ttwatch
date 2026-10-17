@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright
 import db
 import insights
 import pacing
-from paths import PROFILE_DIR
+from paths import APP_NAME, PROFILE_DIR
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._]{2,24}$")
 URL_USER_RE = re.compile(r"tiktok\.com/@([A-Za-z0-9._]{2,24})", re.I)
@@ -44,6 +44,18 @@ TRANSIENT_MARKERS = (
     "net::err_",
     "target page, context or browser has been closed",
 )
+# No sign of life from the running job for this long (seconds) and the page warns that the scan may be stuck.
+# Every wait inside a job is shorter (page load 60 s, captcha steps 2 s, retry pauses 15 s) or reports in as it goes.
+STALL_AFTER = 120
+
+
+def duration_text(seconds):
+    """'45 giây', '3 phút 20 giây', '12 phút'; the page formats the same way."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds} giây"
+    minutes, rest = divmod(seconds, 60)
+    return f"{minutes} phút {rest} giây" if minutes < 10 and rest else f"{minutes} phút"
 
 
 class CaptchaSolved(Exception):
@@ -151,6 +163,8 @@ class Scraper:
     RETRY_DELAYS = (5, 15)
     CAPTCHA_WAIT_STEPS = 90        # x 2 s = wait up to 3 minutes for the user to solve the captcha
     CAPTCHA_COOLDOWN = 600         # after giving up, do not pop the window up again for 10 minutes
+    batch: dict | None = None        # the run of queued jobs in progress: {"total", "done", "errors", "started"}
+    last_batch: dict | None = None   # summary of the run that just ended, for the page: {"done", "errors", "seconds", "ended"}
 
     def __init__(self):
         self.jobs = queue.Queue()
@@ -189,6 +203,10 @@ class Scraper:
                     continue
                 if prev is None:
                     self.jobs.put(qkey)
+                    if self.batch is None:
+                        self.batch = {"total": 0, "done": 0, "errors": 0, "started": time.time()}
+                        self.last_batch = None
+                    self.batch["total"] += 1
                     if key != running:
                         db.set_status(key, "queued")
                 self.pending[qkey] = new
@@ -197,10 +215,69 @@ class Scraper:
 
     def status(self):
         with self.lock:
+            now = time.time()
+            current = dict(self.current) if self.current else None
+            if current:
+                idle = now - current.get("beat", current["started"])
+                current.update(elapsed=int(now - current["started"]), idle=int(idle), stalled=idle > STALL_AFTER)
+            batch = None
+            if self.batch:
+                b = self.batch
+                left = b["total"] - b["done"]
+                # Wall-clock average of the jobs so far, pauses included; no guess from a single job.
+                eta = int((now - b["started"]) / b["done"] * left) if b["done"] >= 2 and left > 0 else None
+                batch = {"total": b["total"], "done": b["done"], "errors": b["errors"], "eta": eta}
+            last = dict(self.last_batch, ago=int(now - self.last_batch["ended"])) if self.last_batch else None
             return {
                 "queue": len(self.pending) + (1 if self.current else 0),
-                "current": dict(self.current) if self.current else None,
-                "pause": self.pacer.backing_off()}
+                "current": current,
+                "pause": self.pacer.backing_off(),
+                "batch": batch,
+                "last": last}
+
+    def _beat(self, step=None):
+        """Report progress on the running job, so the page can tell a slow scan from a stuck one."""
+        with self.lock:
+            if self.current:
+                self.current["beat"] = time.time()
+                if step:
+                    self.current["step"] = step
+
+    def _batch_job_done(self, failed):
+        """Count a finished job (failed None: skipped, e.g. the channel was deleted); keep a summary when the queue drains."""
+        summary = None
+        with self.lock:
+            b = self.batch
+            if b is None:
+                return
+            if failed is None:
+                b["total"] -= 1
+            else:
+                b["done"] += 1
+                b["errors"] += int(failed)
+            if self.pending or self.current:
+                return
+            self.batch = None
+            if b["done"]:
+                now = time.time()
+                summary = self.last_batch = {"done": b["done"], "errors": b["errors"],
+                                             "seconds": int(now - b["started"]), "ended": int(now)}
+        # A lone clean job needs no ping: the person who started it is watching the page.
+        if summary and (summary["done"] > 1 or summary["errors"]):
+            self._announce(summary)
+
+    @staticmethod
+    def _announce(summary):
+        try:
+            cfg = db.get_settings()
+            if insights.in_quiet_hours(time.localtime().tm_hour, cfg.get("quiet_start"), cfg.get("quiet_end")):
+                return
+            text = f"Quét xong {summary['done']} kênh"
+            if summary["errors"]:
+                text += f", {summary['errors']} kênh lỗi"
+            _notify_tray_text(f"{text} (mất {duration_text(summary['seconds'])}).", APP_NAME)
+        except Exception:
+            traceback.print_exc()  # a failing notice must not stop the worker
 
     def skip_pause(self):
         """Let the queue go on right now instead of waiting out a pause."""
@@ -224,21 +301,27 @@ class Scraper:
             with self.lock:
                 job = self.pending.pop(qkey, None)
             if job is None or not db.channel_exists(key):
+                self._batch_job_done(None)
                 continue
             with self.lock:
+                now = time.time()
                 self.current = {"username": key, "label": describe_job(job), "videos": 0,
-                                "total": len(job.get("ids", [])), "started": time.time()}
+                                "total": len(job.get("ids", [])), "started": now, "beat": now,
+                                "step": "Đang mở trình duyệt"}
             db.set_status(key, "running")
             outcome = pacing.NEUTRAL
             try:
                 outcome = self._execute(key, job)
             finally:
+                # Read how it ended before the re-queue below overwrites the status.
+                failed = (db.get_channel(key) or {}).get("status") == "error"
                 with self.lock:
                     self.current = None
                     # A new job was queued for this channel while it was running: put it back in the queued state.
                     if key in self.pending or f"{key}#videos" in self.pending:
                         db.set_status(key, "queued")
                 self.pacer.after_job(job["mode"], outcome)
+                self._batch_job_done(failed)
 
     def _execute(self, key, job):
         """Run one job; transient errors are retried, other errors are reported immediately.
@@ -272,6 +355,7 @@ class Scraper:
                 traceback.print_exc()
                 self._close_browser()
                 if attempt < attempts and _is_transient(e):
+                    self._beat(f"Lỗi tạm thời, thử lại lần {attempt + 1}/{attempts}")
                     db.set_status(
                         key, "running",
                         f"Lỗi tạm thời, sẽ thử lại lần {attempt + 1}/{attempts}: {_first_line(e)}")
@@ -309,6 +393,7 @@ class Scraper:
         visible = db.get_setting("show_browser", "0") == "1"
         if self._ctx is not None and self._ctx_visible == visible:
             return self._ctx
+        self._beat("Đang mở trình duyệt")
         self._close_browser()
         self._pw = sync_playwright().start()
         args = [
@@ -324,6 +409,7 @@ class Scraper:
         errors = []
         profile_busy = False
         for channel in ("msedge", "chrome", None):
+            self._beat()   # every launch attempt can take its own while; the stall warning must not count them as one
             try:
                 self._ctx = self._pw.chromium.launch_persistent_context(
                     str(PROFILE_DIR), channel=channel, headless=False, args=args, locale="vi-VN",
@@ -364,6 +450,7 @@ class Scraper:
         responses = []
         page.on("response", lambda r: responses.append(r) if "/api/post/item_list" in r.url else None)
         try:
+            self._beat("Đang mở trang kênh")
             page.goto(f"https://www.tiktok.com/@{key}", wait_until="domcontentloaded", timeout=60000)
             raw = None
             for _ in range(20):
@@ -382,6 +469,7 @@ class Scraper:
                     db.set_status(key, "error", "Không đọc được trang kênh")
                 return
 
+            self._beat("Đang đọc thông tin kênh")
             scope = json.loads(raw).get("__DEFAULT_SCOPE__", {})
             detail = scope.get("webapp.user-detail", {})
             info = detail.get("userInfo") or {}
@@ -445,6 +533,7 @@ class Scraper:
                 with self.lock:
                     if self.current:
                         self.current["videos"] = len(items)
+                        self.current["beat"] = time.time()
                 return new
 
             def enough():
@@ -453,6 +542,7 @@ class Scraper:
                 return bool(since and tail_time and tail_time < since)
 
             # Wait for the channel page to call the video-list API itself (up to 30 x 500 ms).
+            self._beat("Đang chờ danh sách video")
             for _ in range(30):
                 page.wait_for_timeout(500)
                 collect()
@@ -467,6 +557,7 @@ class Scraper:
                 self._flags.add(pacing.BLOCKED)   # TikTok answered with an empty list for a channel that has videos
 
             if job["mode"] == "scan":
+                self._beat("Đang cuộn trang để lấy thêm video")
                 while has_more and idle < 10 and not enough():
                     _evaluate_after_navigation(page, "() => window.scrollTo(0, document.body.scrollHeight)")
                     page.mouse.wheel(0, 3000)
@@ -511,6 +602,7 @@ class Scraper:
         rows, missing = [], 0
         try:
             for n, vid in enumerate(ids, 1):
+                self._beat(f"Đang mở video {n}/{len(ids)}")
                 item = None
                 try:
                     page.goto(f"https://www.tiktok.com/@{uid}/video/{vid}", wait_until="domcontentloaded", timeout=60000)
@@ -590,10 +682,12 @@ class Scraper:
         msg = "TikTok yêu cầu xác minh: cửa sổ trình duyệt đã hiện, hãy giải captcha trong 3 phút (tool sẽ tự chạy tiếp)"
         db.set_status(key, "running", msg)
         _notify_tray_text(msg, "Cần giải captcha")
+        self._beat("Đang chờ bạn giải captcha (tối đa 3 phút)")
         solved = False
         try:
             for _ in range(self.CAPTCHA_WAIT_STEPS):
                 page.wait_for_timeout(2000)
+                self._beat()
                 if not self._has_captcha(page):
                     solved = True
                     break
