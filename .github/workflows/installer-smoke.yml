@@ -51,7 +51,7 @@ jobs:
         id: installer
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
+          choco install innosetup --version 6.7.1 --allow-downgrade --no-progress -y
           if ($LASTEXITCODE -ne 0) { throw "Could not install Inno Setup" }
           $ver = python -c "from version import __version__; print(__version__)"
           ./packaging/build_installer.ps1 -Version 0.0.1
