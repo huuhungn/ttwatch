@@ -99,6 +99,14 @@ class BuildContractTest(unittest.TestCase):
         assets = [a for a in args.split() if a != "`"][1:]   # the first argument is the tag
         self.assertEqual(assets, ["$zip", '"$zip.sha256"', "$setup", '"$setup.sha256"'])
 
+    def test_smoke_test_creates_the_run_key_before_writing_to_it(self):
+        # The first release run for v0.4.0 failed because a fresh runner profile had no Run key: create it only when missing.
+        smoke = (ROOT / "scripts" / "ci" / "installer_smoke.ps1").read_text(encoding="utf-8")
+        guard = "if (-not (Test-Path $runKey)) { New-Item -Path $runKey | Out-Null }"
+        self.assertIn(guard, smoke)
+        self.assertLess(smoke.index(guard), smoke.index("New-ItemProperty -Path $runKey"))
+        self.assertNotIn("New-Item -Path $runKey -Force", smoke)
+
     def test_smoke_test_refuses_to_run_outside_ci(self):
         smoke = (ROOT / "scripts" / "ci" / "installer_smoke.ps1").read_text(encoding="utf-8")
         self.assertIn("GITHUB_ACTIONS", smoke)

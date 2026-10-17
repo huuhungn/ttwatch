@@ -40,7 +40,8 @@ function Find-Ping() {
 }
 
 function Wait-Ping() {
-    for ($i = 0; $i -lt 90; $i++) {
+    # Up to 120 s (240 x 0.5 s): a slow runner took 21 s to start the app once, and the first start also creates the database.
+    for ($i = 0; $i -lt 240; $i++) {
         $r = Find-Ping
         if ($r) { return $r }
         Start-Sleep -Milliseconds 500
@@ -75,6 +76,8 @@ try {
     Assert (Test-Path (Join-Path $data 'data.db')) 'the app created its database beside the exe'
     Set-Content -Path (Join-Path $data 'marker.txt') -Value 'keep me'
     Set-Content -Path (Join-Path $installDir '_internal\stale-runtime.dll') -Value 'left by an older runtime'
+    # A fresh runner profile may not have the Run key yet (the first release run for v0.4.0 failed on that): create it only when missing.
+    if (-not (Test-Path $runKey)) { New-Item -Path $runKey | Out-Null }
     New-ItemProperty -Path $runKey -Name ttwatch -Value "`"$exe`" --background" -PropertyType String -Force | Out-Null
 
     # 3. Install the newer build over the running one.
