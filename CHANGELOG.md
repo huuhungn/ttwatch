@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-17
 
 ### Added
 - **Setup.exe.** Releases now include `ttwatch-v<version>-Setup.exe` next to the zip: a per-user installer (no administrator rights) built with Inno Setup that installs into `%LOCALAPPDATA%\Programs\ttwatch`, adds a Start Menu entry, an optional Desktop icon and an *Installed apps* entry, and offers to start the tool at the end. Installing a newer Setup over an older copy closes the running tool, replaces the program files and keeps `TheoDoiKenhTiktok_data`; uninstalling stops the tool, removes the program files and the *Start with Windows* entry, and leaves your data folder alone. The in-app self-update still uses the zip, so an installed copy updates itself too.
