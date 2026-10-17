@@ -43,6 +43,10 @@ class InstallerScriptTest(unittest.TestCase):
             self.assertNotIn("browser_data", body, name)
         self.assertEqual([l for l in sections["InstallDelete"]], [l for l in sections["InstallDelete"] if r"{app}\_internal" in l])
 
+    def test_every_packaged_file_is_installed_including_third_party_licenses(self):
+        # An Excludes pattern such as "LICENSE" matches that name in every subfolder and drops the licenses of the bundled libraries.
+        self.assertNotIn("Excludes", "\n".join(_sections(ISS)["Files"]))
+
     def test_the_uninstaller_clears_the_start_with_windows_entry(self):
         self.assertIn('ValueName: "ttwatch"; ValueType: none; Flags: dontcreatekey uninsdeletevalue', ISS)
 

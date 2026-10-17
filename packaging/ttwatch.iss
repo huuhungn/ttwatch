@@ -40,7 +40,7 @@ Name: "desktopicon"; Description: "Tạo biểu tượng ngoài Desktop"; GroupD
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
-Source: "..\dist\ttwatch\*"; DestDir: "{app}"; Excludes: "LICENSE"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\ttwatch\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
