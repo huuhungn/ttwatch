@@ -89,6 +89,16 @@ class BuildContractTest(unittest.TestCase):
         self.assertRegex(RELEASE, r"gh release create .*\$setup .*\$setup\.sha256")
         self.assertIn("installer_smoke.ps1", RELEASE)
 
+    def test_release_command_attaches_the_zip_the_setup_and_both_checksums(self):
+        # The names come from earlier steps: the zip and its .sha256 from "Name and zip", the Setup and its .sha256 from build_installer.ps1.
+        self.assertIn('$zip = "ttwatch-$ver-win64.zip"', RELEASE)
+        self.assertIn('"$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"', RELEASE)
+        self.assertIn('$zip = "${{ steps.pack.outputs.zip }}"', RELEASE)
+        self.assertIn('$setup = "${{ steps.installer.outputs.setup }}"', RELEASE)
+        args = RELEASE.split("gh release create", 1)[1].split("--title", 1)[0]
+        assets = [a for a in args.split() if a != "`"][1:]   # the first argument is the tag
+        self.assertEqual(assets, ["$zip", '"$zip.sha256"', "$setup", '"$setup.sha256"'])
+
     def test_smoke_test_refuses_to_run_outside_ci(self):
         smoke = (ROOT / "scripts" / "ci" / "installer_smoke.ps1").read_text(encoding="utf-8")
         self.assertIn("GITHUB_ACTIONS", smoke)
