@@ -88,6 +88,44 @@ try {
     Start-Process $exe -WorkingDirectory $installDir | Out-Null
     Assert ($null -ne (Wait-Ping)) 'the upgraded app starts and answers /api/ping'
 
+    # 3b. Apply an in-app update to the installed copy with the real helper script from updater.py: it must swap the
+    # program files in place, keep the data and Setup's uninstaller, and restart the app (the zip updates installed copies too).
+    $work = Join-Path ([IO.Path]::GetTempPath()) "ttwatch-apply-$([guid]::NewGuid().ToString('N'))"
+    $newDir = Join-Path $work 'new'
+    New-Item -ItemType Directory -Path $newDir | Out-Null
+    $applyScript = Join-Path $work 'apply-update.ps1'
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    python -c "import sys; sys.path.insert(0, sys.argv[1]); import updater; open(sys.argv[2], 'w', encoding='utf-8-sig').write(updater.APPLY_SCRIPT)" $repoRoot $applyScript
+    Assert (Test-Path $applyScript) 'apply-update.ps1 was taken from updater.py'
+    Copy-Item $exe $newDir
+    Copy-Item (Join-Path $installDir '_internal') (Join-Path $newDir '_internal') -Recurse
+    Set-Content -Path (Join-Path $newDir '_internal\delivered-by-update.txt') -Value 'new'
+    Set-Content -Path (Join-Path $installDir '_internal\removed-by-update.txt') -Value 'old'
+    $result = Join-Path $data 'update-result.json'
+    Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue
+    $running = Get-Process ttwatch | Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    Assert ($null -ne $running) 'the installed app is running before the update'
+    $helperArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $applyScript,
+        '-ProcessId', $running.Id, '-InstallDir', $installDir, '-NewDir', $newDir, '-ExeName', 'ttwatch.exe',
+        '-ResultFile', $result, '-Version', '9.9.9', '-BrowserDir', (Join-Path $data 'browser_data'), '-Silent', '1') |
+        ForEach-Object { if ("$_" -match '\s') { "`"$_`"" } else { "$_" } }
+    Start-Process (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $helperArgs -WindowStyle Hidden
+    # The real app exits right after launching the helper; the helper waits for that.
+    foreach ($port in 8765..8774) {
+        try { Invoke-RestMethod -Method Post "http://127.0.0.1:$port/api/shutdown" -TimeoutSec 2 | Out-Null } catch {}
+    }
+    Wait-Until { Test-Path -LiteralPath $result } 120 'the update helper to write its result'
+    $outcome = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
+    Assert ($outcome.ok -eq $true) "the update was applied (helper said: $($outcome.message))"
+    Assert (Test-Path (Join-Path $installDir '_internal\delivered-by-update.txt')) 'new program files are in place'
+    Assert (-not (Test-Path (Join-Path $installDir '_internal\removed-by-update.txt'))) 'old program files are gone'
+    Assert (Test-Path (Join-Path $installDir 'unins000.exe')) "Setup's uninstaller survived the update"
+    Assert ((Get-Content (Join-Path $data 'marker.txt')) -eq 'keep me') 'user data survived the update'
+    Assert (Test-Path (Join-Path $data 'data.db')) 'database survived the update'
+    Assert ($null -ne (Wait-Ping)) 'the app restarted by the update helper answers /api/ping'
+    Wait-Until { -not (Test-Path (Join-Path $installDir '.update')) } 30 'the helper to clean up .update'
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+
     # 4. Uninstall while it runs: program files go, data and everything the user made stay.
     $uninstaller = Join-Path $installDir 'unins000.exe'
     Assert (Test-Path $uninstaller) 'uninstaller exists'
