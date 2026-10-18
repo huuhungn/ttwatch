@@ -2,10 +2,14 @@
 
 The app's interface is in Vietnamese. This guide quotes each label exactly as it appears, in backticks, with the English meaning in parentheses the first time it is used.
 
+## Install
+
+Download from [Releases](https://github.com/huuhungn/ttwatch/releases). Either run `ttwatch-v<version>-Setup.exe` (a per-user install into `%LOCALAPPDATA%\Programs\ttwatch` with a Start Menu entry and an uninstaller; no administrator rights), or unzip `ttwatch-v<version>-win64.zip` anywhere you can write to and run `ttwatch.exe`. Your data lives in the `TheoDoiKenhTiktok_data` folder next to the program: updating keeps it, and uninstalling the Setup leaves it in place. The Setup is not code-signed yet, so Windows SmartScreen may warn: choose `More info`, then `Run anyway`.
+
 ## Quick start
 
 1. Paste channel links, video links or `@username` into the box at the top (one channel per line, or separated by commas or spaces). Choose a scan type and click `Thêm kênh` (Add channel), or press Ctrl+Enter.
-2. The tool fetches channel and video information with a browser on your machine; progress is shown in the top-right corner.
+2. The tool fetches channel and video information with a browser on your machine (a hidden window). The bar at the top-right shows how the scan is going: the channel being scanned and its step (for example `Đang cuộn trang để lấy thêm video`, scrolling the page for more videos), how long it has been running, how many channels of the run are done (`đã xong 3/12`), an estimate of the time left once two channels are done, and how many failed. If nothing happens for 2 minutes the spinner turns into a warning that the scan may be stuck: close the tool and open it again, then rescan the channel that shows `Bị dừng` (Interrupted). When the queue is empty the bar keeps a summary (`Quét xong N kênh trong …`, scanned N channels in …, with the number of failed ones); close it with `Ẩn` (Hide). A run of two or more channels, or one with failures, also shows a notice in the tray (not during quiet hours).
 3. Each update stores one history snapshot. You need at least two snapshots before growth figures and charts appear.
 
 ## Screens
