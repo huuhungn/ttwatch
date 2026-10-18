@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-10-18
 
 ### Added
 - **Scan monitor.** The bar under the header now says what the scan is doing and how far it has got: the current step (opening the channel, waiting for the video list, scrolling, waiting for you to solve a captcha, retrying), how long the channel has been running, how many channels of the batch are done, an estimate of the time left (from the second finished channel on) and how many failed.
@@ -9,6 +9,7 @@
 
 ### Changed
 - `GET /api/channels` and the other worker statuses gain `batch` and `last`; `current` gains `step`, `elapsed`, `idle` and `stalled`.
+- The installer smoke test creates the `Run` registry key when a fresh runner profile lacks it (the first release run for 0.4.0 failed on that) and waits up to 2 minutes for the app to start.
 
 ## 0.4.0 — 2026-10-17
 
