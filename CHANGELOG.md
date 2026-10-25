@@ -1,9 +1,9 @@
 # Changelog
 
-## 0.6.0 — 2026-10-25
+## 0.6.0 — 2026-10-26
 
 ### Added
-- **Standout video alert.** After an update, a video posted in the last 30 days that reaches 3 times the channel's median views (needs at least 5 videos) creates a ★ alert with its views and how many times the median it is, and shows in the tray like the other alerts. Each video alerts once, on the update that takes it over the bar. Set the multiple in *Cài đặt* (`alert_viral_x`, 0 = off).
+- **Standout video alert.** After an update, a video posted in the last 30 days that reaches 3 times the channel's median views (needs at least 5 videos) creates a ★ alert with its views and how many times the median it is, and shows in the tray like the other alerts. A video alerts on the update that takes it over the bar, not again while it stays above it (if the channel's median later rises past it, crossing the new bar alerts again). Set the multiple in *Cài đặt* (`alert_viral_x`, 0 = off).
 - **Hashtags and video length in the channel detail.** *Hashtag hay dùng* lists the tags found in the descriptions of at least 2 videos with their median views against the channel's; a tag opens the video list filtered by it (`/videos?u=<user>&q=<text>` now prefills the search). *View trung vị theo thời lượng* compares median views by video length. Both come from data the tool already stores, so no rescan is needed. `GET /api/channels/{username}/insights` gains `hashtags` and `durations`.
 
 ### Changed
