@@ -192,6 +192,11 @@ table.mini { width: 100%; border-collapse: collapse; }
 .alert-item.unread { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
 .alert-item .t { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .alert-ico { text-align: center; }
+.alert-ico.k-followers { color: var(--c6); }
+.alert-ico.k-new_video { color: var(--up); }
+.alert-ico.k-viral { color: var(--c4); }
+.chips.alert-chips { padding: 0 0 10px; }
+.alert-day { padding: 12px 12px 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
 
 dialog.wide { width: min(860px, calc(100vw - 24px)); }
 dialog.settings { width: min(900px, calc(100vw - 24px)); max-height: calc(100vh - 32px); }

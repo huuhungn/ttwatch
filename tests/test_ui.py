@@ -144,7 +144,12 @@ class UiTest(unittest.TestCase):
         p.wait_for_selector(".alert-item.unread")
         self.assertEqual(p.locator(".alert-item").count(), 3)
         self.assertEqual(p.locator(".alert-item").first.locator(".alert-ico").inner_text(), "★")
+        self.assertEqual(p.locator(".alert-day").first.inner_text().strip().lower(), "hôm nay")
         self.shot("alerts")
+        p.click('.alert-chips [data-kind="viral"]')
+        self.assertEqual(p.locator(".alert-item").count(), 1)
+        p.click('.alert-chips [data-kind=""]')
+        self.assertEqual(p.locator(".alert-item").count(), 3)
         p.click("#alertsRead")
         p.wait_for_selector("#alertCount", state="hidden")
         p.keyboard.press("1")
@@ -523,6 +528,22 @@ class UiTest(unittest.TestCase):
             self.assertEqual(self.db.get_setting("scan_pace"), "slow")
         finally:
             self.db.set_settings({"scan_pace": "normal"})
+
+    def test_opening_an_alert_marks_it_read(self):
+        import insights
+
+        insights.add_alert("beta", "followers", "@Beta tăng 9.0% follow")
+        p = self.page
+        try:
+            self.open_home()
+            p.click('.tab[data-tab="alerts"]')
+            p.click('.alert-item.unread a:has-text("@Beta tăng 9.0%")')
+            p.wait_for_selector("#drawer.on")
+            p.wait_for_function("!document.querySelector('.alert-item.unread a[data-open=\"beta\"]')")
+            self.assertFalse(any(not a["read"] for a in insights.list_alerts()["alerts"] if a["username"] == "beta"))
+        finally:
+            with self.db._conn() as c:  # leave the seeded alerts as the other tests expect them
+                c.execute("DELETE FROM alerts WHERE text=?", ("@Beta tăng 9.0% follow",))
 
     def test_viral_alert_setting_is_saved(self):
         p = self.page
