@@ -248,5 +248,7 @@ bindTableKeys(table, {
   copy: (sel) => copyText(sel.map(videoUrl).join("\n"), `Đã sao chép ${sel.length} link`),
 });
 
+$("#search").value = new URLSearchParams(location.search).get("q") || ""; // e.g. a hashtag clicked in the channel detail
+applyFilter();
 load();
 setInterval(load, 3000);

@@ -199,6 +199,32 @@ class ChannelInsightsTest(unittest.TestCase):
         empty = insights.channel_insights("none")
         self.assertTrue(empty["empty"])
         self.assertEqual(len(empty["heatmap"]), 7)
+        self.assertEqual(empty["hashtags"], [])
+        self.assertEqual([d["count"] for d in empty["durations"]], [0] * 5)
+
+    def test_hashtags_and_durations(self):
+        import insights
+
+        db = _fresh_db("insights-tags")
+        db.add_channels(["demo"])
+        rows = [("#Mèo #meo #chó", 10, 100), ("#mèo vui", 20, 300), ("#mèo", 45, 900),
+                ("#chó", 90, 50), ("không tag", 0, 70), ("#một", 400, 10)]
+        db.finish_scan("demo", [_video(f"v{i}", description=d, duration=s, play=p)
+                                for i, (d, s, p) in enumerate(rows)], full=False)
+        out = insights.channel_insights("demo")
+        tags = {t["tag"]: t for t in out["hashtags"]}
+        # Case-insensitive, Vietnamese letters kept, counted once per video, single-use tags dropped.
+        self.assertEqual(set(tags), {"mèo", "chó"})
+        self.assertEqual(tags["mèo"]["count"], 3)
+        self.assertEqual(tags["mèo"]["median_views"], 300)
+        self.assertEqual(out["hashtags"][0]["tag"], "mèo")
+        self.assertEqual(tags["mèo"]["lift"], round(300 / out["views"]["median"], 2))
+        dur = {d["label"]: (d["count"], d["median_views"]) for d in out["durations"]}
+        self.assertEqual(dur["<15s"], (1, 100))
+        self.assertEqual(dur["15–30s"], (1, 300))
+        self.assertEqual(dur["30–60s"], (1, 900))
+        self.assertEqual(dur["1–3 phút"], (1, 50))
+        self.assertEqual(dur["≥3 phút"], (1, 10))  # the 0-second row is left out
 
 
 class AlertsTest(unittest.TestCase):

@@ -43,7 +43,8 @@ def _seed(db):
             c.execute(
                 "INSERT INTO videos(id, username, description, create_time, duration, cover, play, digg, comment, share,"
                 " collect, music, is_ad, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
-                (f"a{i}", "alpha", f"Video số {i}", NOW - i * 3 * DAY - 3600 * (i % 5), 15, "", 1000 * (i + 1) ** 2,
+                (f"a{i}", "alpha", f"Video số {i} #{'mèo' if i % 2 else 'review'} #vlog", NOW - i * 3 * DAY - 3600 * (i % 5),
+                 (8, 20, 45, 90, 200)[i % 5], "", 1000 * (i + 1) ** 2,
                  100 * (i + 1), 10, 5, 3, "nhạc", NOW),
             )
         c.execute("INSERT INTO alerts(username, kind, text, ts) VALUES('alpha','followers','@Alpha tăng 12.0% follow (1.000 → 1.120)',?)", (NOW - 300,))
@@ -164,6 +165,11 @@ class UiTest(unittest.TestCase):
         p.wait_for_timeout(350)  # wait for the drawer to finish sliding in before taking the screenshot
         self.assertTrue(p.locator("#drawer.on").count())
         self.assertIn("View trung vị", p.locator("#drawer").inner_text())
+        self.assertIn("#mèo", p.locator("#drawer").inner_text())
+        self.assertIn("View trung vị theo thời lượng", p.locator("#drawer").inner_text())
+        p.locator('#drawer h4:has-text("Hashtag hay dùng")').scroll_into_view_if_needed()
+        self.shot("drawer-tags")
+        p.evaluate("document.querySelector('#drawer').scrollTop = 0")
         self.assertGreater(p.locator("#drawer .heat-c").count(), 100)
         self.shot("drawer")
         p.click('#drawer [data-ddays="7"]')
@@ -368,6 +374,13 @@ class UiTest(unittest.TestCase):
         self.shot("videos")
         p.fill("#search", "Video số 7")
         p.wait_for_function("document.querySelectorAll('#table tbody tr').length === 1")
+
+    def test_hashtag_link_opens_the_filtered_video_list(self):
+        p = self.page
+        p.goto(self.base + "/videos?u=alpha&q=%23m%C3%A8o")
+        p.wait_for_selector("#table tbody tr")
+        self.assertEqual(p.locator("#search").input_value(), "#mèo")
+        self.assertEqual(p.locator("#table tbody tr").count(), 4)
 
     # ------------------------------------------------------------ self-update bar (the server's answer is faked)
 
