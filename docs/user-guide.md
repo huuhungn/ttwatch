@@ -44,7 +44,7 @@ Select 2–6 channels (Ctrl+click), then right-click → `So sánh các kênh đ
 Generated after every successful update, from the second one onwards:
 - followers changed by at least the percentage threshold (default 5%, adjustable in `Cài đặt` (Settings); 0 = off);
 - the channel has a new video between two updates;
-- a video posted in the last 30 days reaches at least 3 times the channel's median views (★, adjustable in `Cài đặt`; 0 = off; needs at least 5 videos). Each video alerts once, on the update where it crosses the bar; several at once give one alert naming the strongest.
+- a video posted in the last 30 days reaches at least 3 times the channel's median views (★, adjustable in `Cài đặt`; 0 = off; needs at least 5 videos). A video alerts on the update where it crosses the bar and not again while it stays above it (if the channel's median later rises past it, crossing the new bar alerts again); several at once give one alert naming the strongest.
 
 A red dot on the tab shows the number of unread alerts. The system tray also shows a notification balloon. The list is grouped by day; when it holds more than one kind, chips above it filter by kind. Clicking an alert opens the channel detail and marks that alert read.
 
