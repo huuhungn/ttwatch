@@ -281,6 +281,15 @@ async function paintDrawer() {
       tile("Vượt trội", String(ins.outperformers.length), "≥ 2× trung vị") +
       `</div>` +
       `<div class="panel"><h4>Phân bố view</h4>${Charts.bars(ins.distribution.map((d) => ({ label: d.label, value: d.count })))}</div>` +
+      (ins.durations.some((d) => d.count)
+        ? `<div class="panel"><h4>View trung vị theo thời lượng</h4>${Charts.bars(ins.durations.filter((d) => d.count).map((d) => ({ label: `${d.label} · ${d.count}`, value: d.median_views })), { fmt: plainNf })}</div>`
+        : "") +
+      (ins.hashtags.length
+        ? `<div class="panel"><h4>Hashtag hay dùng</h4><table class="mini"><tr><th>Hashtag</th><th class="r">Video</th><th class="r">View trung vị</th><th class="r">So với kênh</th></tr>` +
+          ins.hashtags.map((t) => `<tr><td><a href="/videos?u=${encodeURIComponent(u)}&q=${encodeURIComponent("#" + t.tag)}" target="_blank">#${esc(t.tag)}</a></td><td class="r">${t.count}</td><td class="r">${plainNf(t.median_views)}</td>` +
+            `<td class="r"><span class="delta ${t.lift >= 1.2 ? "up" : t.lift <= 0.8 ? "down" : ""}">${t.lift != null ? String(t.lift).replace(".", ",") + "×" : "–"}</span></td></tr>`).join("") +
+          `</table><div class="muted" style="margin-top:6px">Tag dùng từ 2 video trở lên. "So với kênh" = view trung vị của tag chia cho view trung vị của kênh.</div></div>`
+        : "") +
       `<div class="panel"><h4>Số video đăng mỗi tuần (12 tuần)</h4>${Charts.columns(ins.weekly.map((w) => ({ label: w.weeks_ago ? `${w.weeks_ago} tuần trước` : "Tuần này", value: w.posts })))}</div>` +
       `<div class="panel"><h4>Giờ đăng hiệu quả</h4>${Charts.heatmap(ins.heatmap)}` +
       (ins.best_slot ? `<div class="muted" style="margin-top:6px">Khung trung bình cao nhất: <b>${days[ins.best_slot.weekday]} ${ins.best_slot.hour}h</b> – ${plainNf(ins.best_slot.avg_views)} view/video (${ins.best_slot.count} video).</div>` : '<div class="muted" style="margin-top:6px">Chưa đủ video cùng khung giờ để kết luận.</div>') +

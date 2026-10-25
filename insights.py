@@ -4,6 +4,7 @@ Read-only (except alerts and saved views) and uses only the tables already defin
 so scanning behaviour is unchanged. Displayed times follow the time zone of the machine running the tool.
 """
 import json
+import re
 import statistics
 import time
 from datetime import datetime
@@ -192,6 +193,31 @@ def _bucket(play):
 
 
 BUCKETS = ["<1k", "1k–10k", "10k–100k", "100k–1M", "≥1M"]
+DURATIONS = [(15, "<15s"), (30, "15–30s"), (60, "30–60s"), (180, "1–3 phút"), (None, "≥3 phút")]
+HASHTAG = re.compile(r"#(\w+)")
+
+
+def _hashtags(vids, median, top=10):
+    """Tags used on at least 2 videos, most used first, with their median views against the channel's."""
+    tags = {}
+    for v in vids:
+        for t in {t.lower() for t in HASHTAG.findall(v["description"] or "")}:
+            tags.setdefault(t, []).append(v["play"] or 0)
+    rows = [{"tag": t, "count": len(p), "median_views": round(statistics.median(p)),
+             "lift": round(statistics.median(p) / median, 2) if median else None}
+            for t, p in tags.items() if len(p) >= 2]
+    return sorted(rows, key=lambda r: (-r["count"], -r["median_views"]))[:top]
+
+
+def _durations(vids):
+    """Median views per length bucket; videos without a length (photo posts, old rows) are left out."""
+    cells = {label: [] for _, label in DURATIONS}
+    for v in vids:
+        if v["duration"]:
+            label = next(lab for limit, lab in DURATIONS if limit is None or v["duration"] < limit)
+            cells[label].append(v["play"] or 0)
+    return [{"label": label, "count": len(p), "median_views": round(statistics.median(p)) if p else 0}
+            for label, p in cells.items()]
 
 
 def channel_insights(username, now=None):
@@ -202,7 +228,7 @@ def channel_insights(username, now=None):
     if not vids:
         return {**out, "empty": True, "distribution": [{"label": b, "count": 0} for b in BUCKETS],
                 "heatmap": [[{"count": 0, "avg_views": 0} for _ in range(24)] for _ in range(7)],
-                "weekly": [], "top": [], "outperformers": []}
+                "weekly": [], "top": [], "outperformers": [], "hashtags": [], "durations": _durations([])}
     plays = [v["play"] or 0 for v in vids]
     median = statistics.median(plays)
     mean = statistics.fmean(plays)
@@ -256,6 +282,8 @@ def channel_insights(username, now=None):
         "weekly": weekly,
         "top": [brief(v) for v in top],
         "outperformers": outperformers[:20],
+        "hashtags": _hashtags(vids, median),
+        "durations": _durations(vids),
     }
 
 

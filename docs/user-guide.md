@@ -33,6 +33,8 @@ Select a channel and press **Space** (or right-click → `Biểu đồ và phân
 - History charts of followers, likes, views and video count over 7/30/90 days or all time.
 - **Median views** (`View trung vị`) is the level that half of the videos exceed; it is less skewed by one viral video than the average is.
 - **Outperformers** (`Vượt trội`): videos with at least 2 times the median views (needs at least 5 videos).
+- **Views by length** (`View trung vị theo thời lượng`): median views of the videos under 15 s, 15–30 s, 30–60 s, 1–3 min and longer, with the number of videos in each. Videos with no length (photo posts) are left out.
+- **Hashtags** (`Hashtag hay dùng`): the tags used on at least 2 videos, most used first, with their median views and how that compares with the channel's median (`So với kênh`, green from 1.2×, red up to 0.8×). Click a tag to open the video list filtered by it.
 - **Best posting times** (`Giờ đăng hiệu quả`): a weekday × hour heatmap colored by average views. The slot named is the one with the highest average views among slots with at least 2 videos.
 
 ### Compare
