@@ -234,6 +234,7 @@ class UiTest(unittest.TestCase):
             const ys = [...document.querySelectorAll('#cmpChart path.ln')].map(x => x.getAttribute('d').match(/^M[\d.]+,([\d.]+)/)[1]);
             return ys.length === 2 && ys[0] === ys[1];
         }""")
+        self.assertTrue(p.locator("#cmpChart text.axis", has_text="%").count())
         self.shot("compare")
         p.click("#cmpClose")
 
