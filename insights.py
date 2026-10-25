@@ -86,7 +86,9 @@ def _delta_at(rows, cutoff, field):
         base, partial = rows[0], True
     if base is latest or base[field] is None or latest[field] is None:
         return None
-    return {"delta": latest[field] - base[field], "since": base["ts"], "partial": partial}
+    delta = latest[field] - base[field]
+    return {"delta": delta, "since": base["ts"], "partial": partial, "value": latest[field],
+            "pct": round(delta / base[field] * 100, 1) if base[field] else None}
 
 
 def overview(now=None, stale_days=3, top=10):

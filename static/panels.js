@@ -69,8 +69,10 @@ async function renderOverview() {
   const list = o.gainers[ovState.win][ovState.metric];
   const unit = ovState.metric === "followers" ? "follow" : "view";
   const gainRows = list.length
-    ? `<table class="mini"><tr><th>#</th><th>Kênh</th><th class="r">${ovState.metric === "followers" ? "Follow" : "Tổng view"} +/−</th><th></th></tr>` +
-      list.map((r, i) => `<tr><td class="muted">${i + 1}</td><td>${chLink(r)}</td><td class="r">${r.delta > 0 ? "+" : r.delta < 0 ? "−" : ""}${plainNf(Math.abs(r.delta))}</td><td class="muted">${r.partial ? "mới theo dõi" : ""}</td></tr>`).join("") +
+    ? `<table class="mini"><tr><th>#</th><th>Kênh</th><th class="r">${ovState.metric === "followers" ? "Follow" : "Tổng view"}</th><th class="r">+/−</th><th class="r">%</th><th></th></tr>` +
+      list.map((r, i) => `<tr><td class="muted">${i + 1}</td><td>${chLink(r)}</td><td class="r">${plainNf(r.value)}</td>` +
+        `<td class="r"><span class="delta ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : ""}">${r.delta > 0 ? "+" : r.delta < 0 ? "−" : ""}${plainNf(Math.abs(r.delta))}</span></td>` +
+        `<td class="r muted">${r.pct != null ? (r.pct > 0 ? "+" : "") + String(r.pct).replace(".", ",") + "%" : "–"}</td><td class="muted">${r.partial ? "mới theo dõi" : ""}</td></tr>`).join("") +
       "</table>"
     : `<div class="none-yet">Chưa đủ lịch sử: cần ít nhất hai lần cập nhật cách nhau để tính mức tăng ${unit}.</div>`;
   const miniList = (rows, empty, extra) =>
