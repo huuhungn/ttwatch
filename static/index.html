@@ -82,99 +82,118 @@
   <aside class="drawer-shade" id="drawerShade" hidden></aside>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Chi tiết kênh" aria-hidden="true" tabindex="-1"></aside>
 
-  <dialog id="dlgSettings">
+  <dialog id="dlgSettings" class="settings">
     <h3>Cài đặt</h3>
-    <div class="field row">
-      <input type="checkbox" id="setShowBrowser">
-      <label for="setShowBrowser">Hiện cửa sổ trình duyệt khi quét</label>
-    </div>
-    <div class="field"><small>Bật khi TikTok hiện captcha: bạn giải captcha (hoặc đăng nhập) một lần trong cửa sổ đó, tool sẽ ghi nhớ.</small></div>
-    <div class="field">
-      <label for="setAuto">Tự động cập nhật mỗi (phút)</label>
-      <input type="number" id="setAuto" min="0" step="5">
-      <small>0 = tắt. Tool chỉ tự cập nhật khi đang mở.</small>
-    </div>
-    <div class="field">
-      <label for="setAutoMode">Kiểu tự động cập nhật</label>
-      <select id="setAutoMode">
-        <option value="quick">Cập nhật nhanh (thông tin kênh + video mới nhất)</option>
-        <option value="scan10">Quét 10 video gần nhất</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="setPace">Nhịp quét</label>
-      <select id="setPace">
-        <option value="normal">Bình thường (nghỉ ngẫu nhiên vài giây giữa các kênh)</option>
-        <option value="slow">Chậm, an toàn hơn (nghỉ lâu hơn, hợp khi theo dõi nhiều kênh)</option>
-        <option value="off">Nhanh, không giãn nhịp (dễ bị TikTok chặn)</option>
-      </select>
-      <small>Khi TikTok hiện captcha hoặc không trả dữ liệu, tool tự nghỉ lâu dần (tối đa 15 phút) rồi quét tiếp.</small>
-    </div>
-    <div class="field">
-      <label>Giờ yên lặng (không tự cập nhật)</label>
-      <div class="scan-opts">
-        <select id="setQuietStart"></select> →
-        <select id="setQuietEnd"></select>
+    <div class="set-grid">
+    <section class="set-group">
+      <h4>Quét</h4>
+      <div class="field row">
+        <input type="checkbox" id="setShowBrowser">
+        <label for="setShowBrowser">Hiện cửa sổ trình duyệt khi quét</label>
       </div>
-      <small>Để cả hai là "Tắt" nếu muốn chạy cả ngày.</small>
-    </div>
-    <div class="field row">
-      <input type="checkbox" id="setAlerts">
-      <label for="setAlerts">Tạo cảnh báo sau mỗi lần cập nhật</label>
-    </div>
-    <div class="field">
-      <label for="setAlertPct">Cảnh báo khi follow đổi từ (%)</label>
-      <input type="number" id="setAlertPct" min="0" step="0.5">
-      <small>0 = không cảnh báo theo follow.</small>
-    </div>
-    <div class="field row">
-      <input type="checkbox" id="setAlertVideo">
-      <label for="setAlertVideo">Cảnh báo khi kênh có video mới</label>
-    </div>
-    <div class="field">
-      <label for="setAlertViral">Cảnh báo video nổi khi view gấp (× trung vị của kênh)</label>
-      <input type="number" id="setAlertViral" min="0" step="0.5">
-      <small>Chỉ tính video đăng trong 30 ngày, kênh có từ 5 video. 0 = tắt.</small>
-    </div>
-    <div class="field row">
-      <input type="checkbox" id="setAutostart">
-      <label for="setAutostart">Tự chạy cùng Windows (chạy ngầm ở khay hệ thống, không mở trình duyệt)</label>
-    </div>
-    <div class="field"><small id="autostartInfo"></small></div>
-    <div class="field row">
-      <input type="checkbox" id="setUpdCheck">
-      <label for="setUpdCheck">Tự kiểm tra bản mới trên GitHub</label>
-    </div>
-    <div class="field row">
-      <input type="checkbox" id="setUpdAuto">
-      <label for="setUpdAuto">Tự cài bản mới khi tool đang rảnh</label>
-    </div>
-    <div class="field">
-      <div class="scan-opts">
-        <button class="btn" id="btnUpdCheck">Kiểm tra bản mới ngay</button>
-        <span class="muted" id="updInfo"></span>
+      <div class="field"><small>Bật khi TikTok hiện captcha: bạn giải captcha (hoặc đăng nhập) một lần trong cửa sổ đó, tool sẽ ghi nhớ.</small></div>
+      <div class="field">
+        <label for="setPace">Nhịp quét</label>
+        <select id="setPace">
+          <option value="normal">Bình thường (nghỉ ngẫu nhiên vài giây giữa các kênh)</option>
+          <option value="slow">Chậm, an toàn hơn (nghỉ lâu hơn, hợp khi theo dõi nhiều kênh)</option>
+          <option value="off">Nhanh, không giãn nhịp (dễ bị TikTok chặn)</option>
+        </select>
+        <small>Khi TikTok hiện captcha hoặc không trả dữ liệu, tool tự nghỉ lâu dần (tối đa 15 phút) rồi quét tiếp.</small>
       </div>
-      <small>Khi cập nhật, dữ liệu của bạn được giữ nguyên và bản cũ được xóa sau khi cài xong. Tool chỉ kết nối tới GitHub để hỏi bản mới và tải bản cập nhật.</small>
-    </div>
-    <div class="field">
-      <label for="setTheme">Giao diện</label>
-      <select id="setTheme">
-        <option value="auto">Theo hệ thống</option>
-        <option value="light">Sáng</option>
-        <option value="dark">Tối</option>
-      </select>
-    </div>
-    <div class="field row">
-      <input type="checkbox" id="setDense">
-      <label for="setDense">Bảng gọn (nhiều dòng hơn trên màn hình)</label>
-    </div>
-    <div class="field">
-      <label>Dữ liệu</label>
-      <div class="scan-opts">
-        <button class="btn" id="btnBackup">⬇ Tải bản sao lưu</button>
-        <button class="btn" id="btnAbout">ⓘ Giới thiệu</button>
+    </section>
+    <section class="set-group">
+      <h4>Tự động cập nhật</h4>
+      <div class="field">
+        <label for="setAuto">Tự động cập nhật mỗi (phút)</label>
+        <input type="number" id="setAuto" min="0" step="5">
+        <small>0 = tắt. Tool chỉ tự cập nhật khi đang mở.</small>
       </div>
-      <small id="backupInfo">Tool tự sao lưu mỗi ngày và trước khi nâng cấp cấu trúc dữ liệu (giữ 7 bản).</small>
+      <div class="field">
+        <label for="setAutoMode">Kiểu tự động cập nhật</label>
+        <select id="setAutoMode">
+          <option value="quick">Cập nhật nhanh (thông tin kênh + video mới nhất)</option>
+          <option value="scan10">Quét 10 video gần nhất</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Giờ yên lặng (không tự cập nhật)</label>
+        <div class="scan-opts">
+          <select id="setQuietStart"></select> →
+          <select id="setQuietEnd"></select>
+        </div>
+        <small>Để cả hai là "Tắt" nếu muốn chạy cả ngày.</small>
+      </div>
+    </section>
+    <section class="set-group">
+      <h4>Cảnh báo</h4>
+      <div class="field row">
+        <input type="checkbox" id="setAlerts">
+        <label for="setAlerts">Tạo cảnh báo sau mỗi lần cập nhật</label>
+      </div>
+      <div class="field">
+        <label for="setAlertPct">Cảnh báo khi follow đổi từ (%)</label>
+        <input type="number" id="setAlertPct" min="0" step="0.5">
+        <small>0 = không cảnh báo theo follow.</small>
+      </div>
+      <div class="field row">
+        <input type="checkbox" id="setAlertVideo">
+        <label for="setAlertVideo">Cảnh báo khi kênh có video mới</label>
+      </div>
+      <div class="field">
+        <label for="setAlertViral">Cảnh báo video nổi khi view gấp (× trung vị của kênh)</label>
+        <input type="number" id="setAlertViral" min="0" step="0.5">
+        <small>Chỉ tính video đăng trong 30 ngày, kênh có từ 5 video. 0 = tắt.</small>
+      </div>
+    </section>
+    <section class="set-group">
+      <h4>Khởi động và cập nhật</h4>
+      <div class="field row">
+        <input type="checkbox" id="setAutostart">
+        <label for="setAutostart">Tự chạy cùng Windows (chạy ngầm ở khay hệ thống, không mở trình duyệt)</label>
+      </div>
+      <div class="field"><small id="autostartInfo"></small></div>
+      <div class="field row">
+        <input type="checkbox" id="setUpdCheck">
+        <label for="setUpdCheck">Tự kiểm tra bản mới trên GitHub</label>
+      </div>
+      <div class="field row">
+        <input type="checkbox" id="setUpdAuto">
+        <label for="setUpdAuto">Tự cài bản mới khi tool đang rảnh</label>
+      </div>
+      <div class="field">
+        <div class="scan-opts">
+          <button class="btn" id="btnUpdCheck">Kiểm tra bản mới ngay</button>
+          <span class="muted" id="updInfo"></span>
+        </div>
+        <small>Khi cập nhật, dữ liệu của bạn được giữ nguyên và bản cũ được xóa sau khi cài xong. Tool chỉ kết nối tới GitHub để hỏi bản mới và tải bản cập nhật.</small>
+      </div>
+    </section>
+    <section class="set-group">
+      <h4>Giao diện</h4>
+      <div class="field">
+        <label for="setTheme">Chế độ sáng / tối</label>
+        <select id="setTheme">
+          <option value="auto">Theo hệ thống</option>
+          <option value="light">Sáng</option>
+          <option value="dark">Tối</option>
+        </select>
+      </div>
+      <div class="field row">
+        <input type="checkbox" id="setDense">
+        <label for="setDense">Bảng gọn (nhiều dòng hơn trên màn hình)</label>
+      </div>
+    </section>
+    <section class="set-group">
+      <h4>Dữ liệu</h4>
+      <div class="field">
+        <div class="scan-opts">
+          <button class="btn" id="btnBackup">⬇ Tải bản sao lưu</button>
+          <button class="btn" id="btnAbout">ⓘ Giới thiệu</button>
+        </div>
+        <small id="backupInfo">Tool tự sao lưu mỗi ngày và trước khi nâng cấp cấu trúc dữ liệu (giữ 7 bản).</small>
+      </div>
+    </section>
     </div>
     <div class="dlg-actions">
       <button class="btn danger" id="btnShutdown" style="margin-right:auto" title="Tắt hẳn tool (dừng quét). Mở lại bằng file exe.">⏻ Tắt tool</button>
