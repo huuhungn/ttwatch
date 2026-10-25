@@ -44,7 +44,7 @@ Generated after every successful update, from the second one onwards:
 - the channel has a new video between two updates;
 - a video posted in the last 30 days reaches at least 3 times the channel's median views (★, adjustable in `Cài đặt`; 0 = off; needs at least 5 videos). Each video alerts once, on the update where it crosses the bar; several at once give one alert naming the strongest.
 
-A red dot on the tab shows the number of unread alerts. The system tray also shows a notification balloon.
+A red dot on the tab shows the number of unread alerts. The system tray also shows a notification balloon. The list is grouped by day; when it holds more than one kind, chips above it filter by kind. Clicking an alert opens the channel detail and marks that alert read.
 
 ### Video list
 Double-click a channel (or press Enter). It has summary cards, a `Phân tích` (Analysis) section (collapsed by default) computed over exactly the videos currently filtered, a ★ marker for outperforming videos, and Excel or CSV export.

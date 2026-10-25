@@ -7,6 +7,7 @@
 
 ### Added
 - **Standout video alert.** After an update, a video posted in the last 30 days that reaches 3 times the channel's median views (needs at least 5 videos) creates a ★ alert with its views and how many times the median it is, and shows in the tray like the other alerts. Each video alerts once, on the update that takes it over the bar. Set the multiple in *Cài đặt* (`alert_viral_x`, 0 = off).
+- *Cảnh báo* groups alerts by day (*Hôm nay*, *Hôm qua*, then the date), filters them by kind with chips, colors each kind's icon, and marks an alert read when you click it.
 
 ## 0.5.0 — 2026-10-18
 

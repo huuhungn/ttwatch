@@ -149,15 +149,42 @@ async function pollAlerts(render = false) {
   } catch {}
 }
 
+const ALERT_KINDS = { followers: ["⇅", "Follow"], new_video: ["▶", "Video mới"], viral: ["★", "Video nổi"] };
+let alertKind = "";
+let lastAlerts = null;
+
+function alertDay(ts) {
+  const d = new Date(ts * 1000), today = new Date();
+  const days = Math.round((new Date(today.toDateString()) - new Date(d.toDateString())) / 86400000);
+  return days === 0 ? "Hôm nay" : days === 1 ? "Hôm qua" : fmtDate(ts);
+}
+
 function paintAlerts(a) {
+  lastAlerts = a;
   const pane = $("#pane-alerts");
-  const icon = { followers: "⇅", new_video: "▶", viral: "★" };
+  const kinds = Object.keys(ALERT_KINDS).filter((k) => a.alerts.some((x) => x.kind === k));
+  if (alertKind && !kinds.includes(alertKind)) alertKind = "";
+  const shown = a.alerts.filter((x) => !alertKind || x.kind === alertKind);
+  const chip = (k, label, n) => `<button class="chip" data-kind="${k}" aria-pressed="${alertKind === k}">${label}<span class="n">${n}</span></button>`;
+  let day = null;
+  const rows = shown.map((x) => {
+    const d = alertDay(x.ts);
+    const head = d !== day ? `<div class="alert-day">${d}</div>` : "";
+    day = d;
+    const [ico, label] = ALERT_KINDS[x.kind] || ["•", ""];
+    return head + `<div class="alert-item ${x.read ? "" : "unread"}"><span class="alert-ico k-${esc(x.kind)}" title="${label}" aria-hidden="true">${ico}</span>` +
+      `<span><a href="#" data-open="${esc(x.username)}" data-id="${x.id}">${esc(x.text)}</a></span><span class="t">${fmtAgo(x.ts)}</span></div>`;
+  }).join("");
   pane.innerHTML =
     `<div class="panel"><h4>Cảnh báo <span class="spacer"></span>` +
     `<button class="btn" id="alertsRead" ${a.unread ? "" : "disabled"}>✓ Đánh dấu đã đọc tất cả</button></h4>` +
+    (kinds.length > 1
+      ? `<div class="chips alert-chips" role="group" aria-label="Lọc theo loại cảnh báo">${chip("", "Tất cả", a.alerts.length)}` +
+        kinds.map((k) => chip(k, `${ALERT_KINDS[k][0]} ${ALERT_KINDS[k][1]}`, a.alerts.filter((x) => x.kind === k).length)).join("") + `</div>`
+      : "") +
     (a.alerts.length
-      ? `<div class="alert-list">${a.alerts.map((x) => `<div class="alert-item ${x.read ? "" : "unread"}"><span class="alert-ico">${icon[x.kind] || "•"}</span><span><a href="#" data-open="${esc(x.username)}">${esc(x.text)}</a></span><span class="t">${fmtAgo(x.ts)}</span></div>`).join("")}</div>`
-      : '<div class="none-yet">Chưa có cảnh báo. Cảnh báo xuất hiện khi follow đổi mạnh hoặc kênh đăng video mới giữa hai lần cập nhật; ngưỡng chỉnh trong Cài đặt.</div>') +
+      ? `<div class="alert-list">${rows}</div>`
+      : '<div class="none-yet">Chưa có cảnh báo. Cảnh báo xuất hiện khi follow đổi mạnh, kênh đăng video mới hoặc một video gần đây vượt xa view trung vị của kênh, giữa hai lần cập nhật; ngưỡng chỉnh trong Cài đặt.</div>') +
     `</div>`;
 }
 
@@ -167,9 +194,17 @@ async function renderAlerts() {
 
 $("#pane-alerts").addEventListener("click", async (e) => {
   const open = e.target.closest("[data-open]");
+  const kind = e.target.closest("[data-kind]");
   if (open) {
     e.preventDefault();
     openDrawer(open.dataset.open);
+    if (open.closest(".alert-item.unread")) {
+      await api("/api/alerts/read", { ids: [Number(open.dataset.id)] });
+      await pollAlerts(true);
+    }
+  } else if (kind) {
+    alertKind = kind.dataset.kind;
+    paintAlerts(lastAlerts);
   } else if (e.target.closest("#alertsRead")) {
     await api("/api/alerts/read", {});
     await pollAlerts(true);
