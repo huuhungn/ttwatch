@@ -144,6 +144,12 @@ class OverviewTest(unittest.TestCase):
         _snap(db, "young", NOW - 3600, 40)
         row = self.insights.overview(now=NOW)["gainers"]["d30"]["followers"][0]
         self.assertEqual((row["delta"], row["partial"]), (30, True))
+        self.assertEqual((row["value"], row["pct"]), (40, 300.0))
+        db.add_channels(["zero"])
+        _snap(db, "zero", NOW - 2 * DAY, 0)  # a zero baseline has no percentage
+        _snap(db, "zero", NOW - 60, 5)
+        rows = {r["username"]: r for r in self.insights.overview(now=NOW)["gainers"]["d30"]["followers"]}
+        self.assertIsNone(rows["zero"]["pct"])
 
     def test_series_is_cumulative_and_carries_forward(self):
         db = _fresh_db("overview-series")
