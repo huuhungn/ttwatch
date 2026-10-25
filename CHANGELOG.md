@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- *Cài đặt* is split into titled groups (scanning, auto-update, alerts, startup and updates, appearance, data) laid out in two columns on wide windows, and *Lưu* stays visible at the bottom while the dialog scrolls.
+
 ### Added
 - **Standout video alert.** After an update, a video posted in the last 30 days that reaches 3 times the channel's median views (needs at least 5 videos) creates a ★ alert with its views and how many times the median it is, and shows in the tray like the other alerts. Each video alerts once, on the update that takes it over the bar. Set the multiple in *Cài đặt* (`alert_viral_x`, 0 = off).
 
