@@ -151,7 +151,7 @@ async function pollAlerts(render = false) {
 
 function paintAlerts(a) {
   const pane = $("#pane-alerts");
-  const icon = { followers: "⇅", new_video: "▶" };
+  const icon = { followers: "⇅", new_video: "▶", viral: "★" };
   pane.innerHTML =
     `<div class="panel"><h4>Cảnh báo <span class="spacer"></span>` +
     `<button class="btn" id="alertsRead" ${a.unread ? "" : "disabled"}>✓ Đánh dấu đã đọc tất cả</button></h4>` +

@@ -41,7 +41,8 @@ Select 2–6 channels (Ctrl+click), then right-click → `So sánh các kênh đ
 ### Alerts (`Cảnh báo`)
 Generated after every successful update, from the second one onwards:
 - followers changed by at least the percentage threshold (default 5%, adjustable in `Cài đặt` (Settings); 0 = off);
-- the channel has a new video between two updates.
+- the channel has a new video between two updates;
+- a video posted in the last 30 days reaches at least 3 times the channel's median views (★, adjustable in `Cài đặt`; 0 = off; needs at least 5 videos). Each video alerts once, on the update where it crosses the bar; several at once give one alert naming the strongest.
 
 A red dot on the tab shows the number of unread alerts. The system tray also shows a notification balloon.
 
@@ -75,7 +76,7 @@ Double-click a channel (or press Enter). It has summary cards, a `Phân tích` (
 - **Auto-update**: interval in minutes, type (quick or a 10-video scan) and quiet hours (may span midnight).
 - **Scan pace** (`Nhịp quét`): *Bình thường* (default) rests a random few seconds between channels; *Chậm* rests longer, better when you follow many channels; *Nhanh* keeps the old fixed 1.5-second pause and never slows down. Whatever the pace, when TikTok shows a captcha, returns an empty video list for a channel that has videos, or a page cannot be read, the tool rests 45 seconds (2 minutes after a captcha), doubling for every further trouble in a row up to 15 minutes at every pace, and goes back to the normal pace after the first clean scan. Troubles more than 30 minutes apart start again from the first step, and a captcha you solve yourself does not slow the queue down. The bar under the header shows the countdown with a *Quét tiếp ngay* button to skip the wait.
 - **Start with Windows** (`Tự chạy cùng Windows`, off by default): the tool starts by itself when you sign in to Windows, quietly in the tray (no browser page), so auto-update and alerts keep working without you opening anything; open the page from the tray icon when you want to look. It adds one entry for your user only (no administrator rights). Untick it to remove the entry. If Windows shows the entry as disabled (Task Manager → Startup apps), the setting tells you; ticking the box and saving turns it on again. Only the exe supports this, not `python app.py`.
-- **Alerts**: on/off, follower threshold, new videos.
+- **Alerts**: on/off, follower threshold, new videos, standout videos (`Cảnh báo video nổi khi view gấp`, times the median views).
 - **Appearance**: light/dark/follow the system, compact table.
 - **Updates**: the tool looks for a new version on GitHub by itself. When one exists a bar appears at the top: *Cập nhật ngay* downloads, installs and restarts the tool (takes a minute or two; your data is kept and the old version is removed); *Để sau* hides the bar until you reload the page; *Bỏ qua bản này* stops reminders for that version. By default a new version is also installed automatically when no scan is running; untick *Tự cài bản mới khi tool đang rảnh* to decide yourself, or untick *Tự kiểm tra bản mới trên GitHub* to turn the check off. *Kiểm tra bản mới ngay* and the tray item *Kiểm tra cập nhật* check on demand.
 
