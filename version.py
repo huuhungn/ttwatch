@@ -3,4 +3,4 @@
 release.yml refuses to build a tag that does not match this value: a binary that reports an older
 version than its own release would offer itself as an update forever.
 """
-__version__ = "0.5.0"
+__version__ = "0.6.0"
