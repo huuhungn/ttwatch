@@ -241,7 +241,7 @@ dialog.settings .dlg-actions { position: sticky; bottom: -20px; margin: 12px -22
 .skip:focus { top: 8px; }
 
 @media (max-width: 720px) {
-  .add-box textarea { height: 84px; }
+  .add-box textarea { flex: none; height: 84px; } /* flex: 1 would collapse it once the box stacks */
 }
 .drawer:focus { outline: none; }
 

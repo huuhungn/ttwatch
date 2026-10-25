@@ -379,7 +379,7 @@ async function paintCompare() {
   }));
   cmp.stop?.();
   const pctFmt = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1).replace(".", ",") + "%";
-  cmp.stop = Charts.line($("#cmpChart"), series, { fmt: cmp.pct ? pctFmt : plainNf, height: 280, label: "So sánh kênh" });
+  cmp.stop = Charts.line($("#cmpChart"), series, { fmt: cmp.pct ? pctFmt : plainNf, axisFmt: cmp.pct ? (v) => `${String(v).replace(".", ",")}%` : undefined, height: 280, label: "So sánh kênh" });
   $("#cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("");
   $("#cmpTable").innerHTML =
     '<table class="mini"><tr><th>Kênh</th><th class="r">Hiện tại</th><th class="r">Đầu kỳ</th><th class="r">Thay đổi</th><th class="r">%</th></tr>' +

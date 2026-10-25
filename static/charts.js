@@ -52,12 +52,13 @@ const Charts = (() => {
 
   /**
    * series: [{ name, points: [[ts, value], ...], color? }]
-   * opts: { height, fmt(value) -> text, empty }
+   * opts: { height, fmt(value) -> text, axisFmt(tick) -> text, empty }
    * Redraws on resize. Returns a dispose function.
    */
   function line(el, series, opts = {}) {
     const height = opts.height || 220;
     const fmt = opts.fmt || full;
+    const axisFmt = opts.axisFmt || short;
     el.classList.add("chart");
     el.style.position = "relative";
 
@@ -80,7 +81,7 @@ const Charts = (() => {
       let g = "";
       for (const t of ay.ticks) {
         g += `<line class="grid-l" x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}"/>`;
-        g += `<text class="axis" x="${L - 8}" y="${Y(t) + 4}" text-anchor="end">${short(t)}</text>`;
+        g += `<text class="axis" x="${L - 8}" y="${Y(t) + 4}" text-anchor="end">${axisFmt(t)}</text>`;
       }
       const nx = Math.max(2, Math.min(6, Math.floor((W - L - R) / 90)));
       for (let i = 0; i <= nx; i++) {
