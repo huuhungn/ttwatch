@@ -261,7 +261,7 @@ def channel_insights(username, now=None):
 
 # ---------------------------------------------------------------- alerts
 
-ALERT_DEFAULTS = {"alerts_enabled": "1", "alert_follow_pct": "5", "alert_new_video": "1"}
+ALERT_DEFAULTS = {"alerts_enabled": "1", "alert_follow_pct": "5", "alert_new_video": "1", "alert_viral_x": "3"}
 
 
 def _alert_settings():
@@ -291,6 +291,10 @@ def check_alerts(key):
             "SELECT id, description FROM videos WHERE username=? AND prev_ts IS NULL AND updated_at >= ? "
             "AND create_time > ? ORDER BY create_time DESC", (key, cur["ts"] - 5, prev["ts"] - DAY))]
         ch = c.execute("SELECT unique_id, followers FROM channels WHERE username=?", (key,)).fetchone()
+        plays = [r[0] or 0 for r in c.execute("SELECT play FROM videos WHERE username=?", (key,))]
+        recent = [dict(r) for r in c.execute(
+            "SELECT description, play, prev_play FROM videos WHERE username=? AND updated_at >= ? AND create_time > ?",
+            (key, cur["ts"] - 5, cur["ts"] - 30 * DAY))]
     name = "@" + ((ch and ch["unique_id"]) or key)
     made = []
     try:
@@ -307,6 +311,23 @@ def check_alerts(key):
         n = len(new_videos)
         first = (new_videos[0]["description"] or "").strip().replace("\n", " ")[:80]
         made.append(("new_video", f"{name} có {n} video mới" + (f": {first}" if first else "")))
+    try:
+        times = float(cfg["alert_viral_x"])
+    except ValueError:
+        times = 3.0
+    median = statistics.median(plays) if len(plays) >= 5 else 0  # same floor as the outperformers
+    if times > 0 and median:
+        bar = times * median
+        # Only the scan that crosses the bar alerts, so a video stays quiet once it has been reported.
+        hot = sorted((v for v in recent if (v["play"] or 0) >= bar and (v["prev_play"] or 0) < bar),
+                     key=lambda v: v["play"], reverse=True)
+        if hot:
+            top = hot[0]
+            desc = (top["description"] or "").strip().replace("\n", " ")[:80]
+            head = f"{name} có {len(hot)} video đang nổi, mạnh nhất" if len(hot) > 1 else f"{name} có video đang nổi"
+            views = f"{top['play']:,}".replace(",", ".")
+            made.append(("viral", f"{head}: {f'{desc} — ' if desc else ''}{views} view, "
+                                  f"gấp {top['play'] / median:.1f}× trung vị"))
     for kind, text in made:
         add_alert(key, kind, text)
     return [{"kind": k, "text": t} for k, t in made]

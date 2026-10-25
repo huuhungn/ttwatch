@@ -112,6 +112,8 @@ DEFAULT_SETTINGS = {
     "alerts_enabled": "1",
     "alert_follow_pct": "5",
     "alert_new_video": "1",
+    # A video of the last 30 days reaching this many times the channel's median views ("0" = off).
+    "alert_viral_x": "3",
     # Scan pacing (pacing.py): "off" | "normal" | "slow".
     "scan_pace": "normal",
     # Start with Windows (autostart.py); the registry entry is written through /api/autostart.

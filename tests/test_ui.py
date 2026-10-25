@@ -522,6 +522,20 @@ class UiTest(unittest.TestCase):
         finally:
             self.db.set_settings({"scan_pace": "normal"})
 
+    def test_viral_alert_setting_is_saved(self):
+        p = self.page
+        self.open_home()
+        p.click("#btnSettings")
+        p.wait_for_selector("#dlgSettings[open]")
+        self.assertEqual(p.locator("#setAlertViral").input_value(), "3")
+        p.fill("#setAlertViral", "0")
+        try:
+            p.click("#setSave")
+            p.wait_for_function("!document.querySelector('#dlgSettings').open")
+            self.assertEqual(self.db.get_setting("alert_viral_x"), "0")
+        finally:
+            self.db.set_settings({"alert_viral_x": "3"})
+
     # ------------------------------------------------------------ start with Windows
 
     def test_autostart_is_disabled_with_a_reason_when_running_from_source(self):

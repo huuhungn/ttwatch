@@ -498,6 +498,7 @@ $("#btnSettings").onclick = async () => {
   $("#setAlerts").checked = s.alerts_enabled !== "0";
   $("#setAlertPct").value = s.alert_follow_pct ?? "5";
   $("#setAlertVideo").checked = s.alert_new_video !== "0";
+  $("#setAlertViral").value = s.alert_viral_x ?? "3";
   $("#setTheme").value = localStorage.getItem("theme") || "auto";
   $("#setDense").checked = localStorage.getItem("dense") === "1";
   $("#setUpdCheck").checked = s.update_check !== "0";
@@ -564,6 +565,7 @@ $("#setSave").onclick = async () => {
     alerts_enabled: $("#setAlerts").checked ? "1" : "0",
     alert_follow_pct: String(Math.max(0, parseFloat($("#setAlertPct").value) || 0)),
     alert_new_video: $("#setAlertVideo").checked ? "1" : "0",
+    alert_viral_x: String(Math.max(0, parseFloat($("#setAlertViral").value) || 0)),
     update_check: $("#setUpdCheck").checked ? "1" : "0",
     update_auto: $("#setUpdAuto").checked ? "1" : "0",
   });

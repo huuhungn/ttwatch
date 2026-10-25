@@ -237,6 +237,36 @@ class AlertsTest(unittest.TestCase):
         insights.mark_alerts_read()
         self.assertEqual(insights.list_alerts(unread_only=True)["alerts"], [])
 
+    def test_viral_video_alert_fires_once_when_crossing(self):
+        import insights
+
+        db = self._channel("alert-viral")
+        db.set_settings({"alert_new_video": "0"})
+        now = int(time.time())
+        base = [_video(f"o{i}", create_time=now - 40 * 86400, play=1000) for i in range(5)]
+        db.save_channel_info("demo", {"followers": 1000})
+        db.finish_scan("demo", base + [_video("hot", create_time=now - 3600, play=1500, description="clip hot")],
+                       full=False)
+        time.sleep(1.1)
+        db.finish_scan("demo", base + [_video("hot", create_time=now - 3600, play=50000, description="clip hot")],
+                       full=False)
+        made = insights.check_alerts("demo")
+        self.assertEqual([a["kind"] for a in made], ["viral"])
+        self.assertIn("clip hot", made[0]["text"])
+        self.assertIn("50.000 view", made[0]["text"])
+        # Already above the bar on the previous scan: no repeat.
+        time.sleep(1.1)
+        db.finish_scan("demo", base + [_video("hot", create_time=now - 3600, play=60000)], full=False)
+        self.assertEqual(insights.check_alerts("demo"), [])
+        # Old videos never count, and 0 turns the alert off.
+        time.sleep(1.1)
+        db.finish_scan("demo", [_video("o0", create_time=now - 40 * 86400, play=10 ** 6)] + base[1:], full=False)
+        self.assertEqual(insights.check_alerts("demo"), [])
+        db.set_settings({"alert_viral_x": "0"})
+        time.sleep(1.1)
+        db.finish_scan("demo", base + [_video("new", create_time=now - 60, play=90000)], full=False)
+        self.assertEqual(insights.check_alerts("demo"), [])
+
     def test_below_threshold_and_disabled(self):
         import insights
 
