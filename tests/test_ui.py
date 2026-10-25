@@ -48,6 +48,7 @@ def _seed(db):
             )
         c.execute("INSERT INTO alerts(username, kind, text, ts) VALUES('alpha','followers','@Alpha tăng 12.0% follow (1.000 → 1.120)',?)", (NOW - 300,))
         c.execute("INSERT INTO alerts(username, kind, text, ts, read) VALUES('beta','new_video','@Beta có 1 video mới: xin chào',?,1)", (NOW - 9000,))
+        c.execute("INSERT INTO alerts(username, kind, text, ts) VALUES('alpha','viral','@Alpha có video đang nổi: Video số 7 — 64.000 view, gấp 3.1× trung vị',?)", (NOW - 120,))
     db.set_status("gamma", "error", "Kênh không tồn tại hoặc bị khóa")
 
 
@@ -138,13 +139,14 @@ class UiTest(unittest.TestCase):
         self.assertIn("@Alpha", p.locator("#pane-overview").inner_text())
         self.assertTrue(p.url.endswith("#overview"))
         self.shot("overview")
-        self.assertEqual(p.locator("#alertCount").inner_text(), "1")
+        self.assertEqual(p.locator("#alertCount").inner_text(), "2")
         p.click('.tab[data-tab="alerts"]')
         p.wait_for_selector(".alert-item.unread")
-        self.assertEqual(p.locator(".alert-item").count(), 2)
+        self.assertEqual(p.locator(".alert-item").count(), 3)
+        self.assertEqual(p.locator(".alert-item").first.locator(".alert-ico").inner_text(), "★")
+        self.shot("alerts")
         p.click("#alertsRead")
         p.wait_for_selector("#alertCount", state="hidden")
-        self.shot("alerts")
         p.keyboard.press("1")
         self.assertTrue(p.locator("#pane-channels").is_visible())
 
@@ -528,6 +530,7 @@ class UiTest(unittest.TestCase):
         p.click("#btnSettings")
         p.wait_for_selector("#dlgSettings[open]")
         self.assertEqual(p.locator("#setAlertViral").input_value(), "3")
+        self.shot("settings")
         p.fill("#setAlertViral", "0")
         try:
             p.click("#setSave")
